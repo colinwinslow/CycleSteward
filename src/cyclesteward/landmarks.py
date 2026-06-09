@@ -26,11 +26,21 @@ ACTIVE_ONSET_FRAC = 0.5  # CC-start: first reading at >= 50% of peak active powe
 TAPER_CONFIRM_FRAC = 0.95  # taper begins once power has dropped >5% below the peak
 COMPLETION_FRAC = 0.05  # completion: active power falls back below 5% of peak
 
+# Inrush settling: scan forward from onset until consecutive readings are within
+# this fraction of each other.  Catches chargers that ramp to CC over several
+# samples before settling.
+INRUSH_STABLE_FRAC = 0.05
+
+# If the apparent taper floor is still above this fraction of peak active power,
+# the session likely ended via a relay cutoff rather than a natural CV taper.
+TAPER_FLOOR_MAX_ACTIVE_FRAC = 0.35
+
 # A gap larger than this multiple of the median sampling interval looks like an
 # interruption rather than normal sampling.
 INTERRUPTION_GAP_MULTIPLE = 3.0
 
 CALIBRATION_DISTRUST = "profile should not be trusted for calibration"
+TAPER_AMBIGUOUS = "taper_floor_w is unreliable due to apparent relay cutoff"
 
 
 @dataclass
@@ -114,13 +124,27 @@ def detect(samples: Sequence[Sample], idle_w: float) -> Detection:
     landmarks.peak_timestamp = samples[peak_index].timestamp
     anchors.watts_at_transition = samples[peak_index].power_w
 
-    # CC-start (low anchor): first reading that reaches the onset fraction of peak.
+    # CC-start (low anchor): find onset then settle past any inrush ramp.
     onset_level = ACTIVE_ONSET_FRAC * peak_active
+    onset_index: Optional[int] = None
     for index, active in enumerate(actives):
         if active >= onset_level:
-            landmarks.active_start_timestamp = samples[index].timestamp
-            anchors.watts_at_low = samples[index].power_w
+            onset_index = index
             break
+
+    if onset_index is not None:
+        # Scan forward from onset until consecutive readings are within
+        # INRUSH_STABLE_FRAC of each other.  This skips the rising edge of an
+        # inrush ramp and lands on the settled CC wattage.
+        settled_index = onset_index
+        for scan in range(onset_index, min(peak_index, len(samples) - 1)):
+            w_curr = samples[scan].power_w
+            w_next = samples[scan + 1].power_w
+            if w_curr > 0 and abs(w_next - w_curr) / w_curr < INRUSH_STABLE_FRAC:
+                settled_index = scan
+                break
+        landmarks.active_start_timestamp = samples[settled_index].timestamp
+        anchors.watts_at_low = samples[settled_index].power_w
 
     # Taper start: first reading after the peak that has dropped clearly below it.
     taper_confirm_level = TAPER_CONFIRM_FRAC * peak_active
@@ -140,11 +164,23 @@ def detect(samples: Sequence[Sample], idle_w: float) -> Detection:
             landmarks.completion_timestamp = samples[index].timestamp
             break
 
-    # Taper floor: the lowest wall wattage during the taper, before completion.
+    # Taper floor: lowest wall wattage during taper, before completion.
+    # Guard against relay cutoffs: if the apparent floor is still well above
+    # idle (> TAPER_FLOOR_MAX_ACTIVE_FRAC of peak), the session was cut off
+    # mid-taper and the value is an artefact, not a settled floor.
     if taper_index is not None:
         end = completion_index if completion_index is not None else len(samples)
         if end > taper_index:
-            anchors.taper_floor_w = min(sample.power_w for sample in samples[taper_index:end])
+            candidate_floor_w = min(sample.power_w for sample in samples[taper_index:end])
+            candidate_active = max(candidate_floor_w - idle_w, 0.0)
+            if candidate_active / peak_active > TAPER_FLOOR_MAX_ACTIVE_FRAC:
+                warnings.append(
+                    f"taper floor candidate ({candidate_floor_w:.1f} W) is "
+                    f"{candidate_active / peak_active:.0%} of peak; "
+                    f"{TAPER_AMBIGUOUS}"
+                )
+            else:
+                anchors.taper_floor_w = candidate_floor_w
 
     if completion_index is None:
         warnings.append(

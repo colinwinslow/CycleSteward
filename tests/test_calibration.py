@@ -1,4 +1,4 @@
-"""Calibration profile model — BDD scenarios A, A2, B, C, D, E."""
+"""Calibration profile model — BDD scenarios A, A2, B, C, D, E, F, F2, G, G2, G3, H."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from cyclesteward.calibration import (
     SocAssumptions,
     SocReport,
 )
-from cyclesteward.landmarks import CALIBRATION_DISTRUST
+from cyclesteward.landmarks import CALIBRATION_DISTRUST, TAPER_AMBIGUOUS
 from cyclesteward.profile import analyze
 from cyclesteward.samples import parse_csv
 
@@ -324,3 +324,214 @@ def test_overhead_in_json_carries_uncertainty_note(clean_fixture):
     assert data["overhead"]["confidence"] == "low"
     assert "note" in data["overhead"]
     assert data["overhead"]["rated_capacity_wh"] == 500.0
+
+
+# ── Scenario F: opportunistic full-session is promoted ────────────────────────
+
+
+def _calibrated_profile(summary) -> CalibrationProfile:
+    """Helper: return a CALIBRATED profile from a clean session summary."""
+    profile = CalibrationProfile(
+        charger_label="c", battery_label="b", meter_id="m", rated_capacity_wh=500.0
+    )
+    profile.ingest_full_session(
+        summary, soc_at_start=SocReport.display_empty(), timestamp=_TS
+    )
+    assert profile.state == ProfileState.CALIBRATED
+    return profile
+
+
+def test_opportunistic_session_is_promoted(clean_fixture):
+    parsed = parse_csv(clean_fixture)
+    summary = analyze(parsed.samples, profile_id="x", idle_power_w=1.8)
+    profile = _calibrated_profile(summary)
+
+    promoted, reason = profile.classify_opportunistic_session(
+        summary, temperature_c=21.0, timestamp=_TS
+    )
+
+    assert promoted is True
+    assert len(profile.temperature_observations) == 1
+    obs = profile.temperature_observations[0]
+    assert obs.temperature_c == 21.0
+    assert obs.active_wh == profile.active_full_wh
+
+
+def test_opportunistic_session_stores_temperature_wh_pair(clean_fixture):
+    parsed = parse_csv(clean_fixture)
+    summary = analyze(parsed.samples, profile_id="x", idle_power_w=1.8)
+    profile = _calibrated_profile(summary)
+
+    profile.classify_opportunistic_session(summary, temperature_c=19.5, timestamp=_TS)
+    profile.classify_opportunistic_session(summary, temperature_c=5.0, timestamp=_TS)
+
+    assert len(profile.temperature_observations) == 2
+    temps = [obs.temperature_c for obs in profile.temperature_observations]
+    assert 19.5 in temps
+    assert 5.0 in temps
+
+
+def test_opportunistic_promotion_appears_in_json(clean_fixture):
+    parsed = parse_csv(clean_fixture)
+    summary = analyze(parsed.samples, profile_id="x", idle_power_w=1.8)
+    profile = _calibrated_profile(summary)
+    profile.classify_opportunistic_session(summary, temperature_c=21.0, timestamp=_TS)
+
+    data = json.loads(profile.to_json())
+    assert len(data["temperature_observations"]) == 1
+    assert data["temperature_observations"][0]["temperature_c"] == 21.0
+
+
+# ── Scenario F2: inrush settling selects settled watts_at_low ─────────────────
+
+
+def test_inrush_fixture_calibrated_with_settled_watts_at_low(inrush_fixture):
+    # The inrush-settling fixture has onset at ~46 W but the settled CC is 70.2 W.
+    # After F2, watts_at_low in the calibration profile should reflect 70.2 W.
+    parsed = parse_csv(inrush_fixture)
+    summary = analyze(parsed.samples, profile_id="x", idle_power_w=1.8)
+    profile = CalibrationProfile(charger_label="c", battery_label="b", meter_id="m")
+    profile.ingest_full_session(
+        summary, soc_at_start=SocReport.display_empty(), timestamp=_TS
+    )
+
+    assert profile.state == ProfileState.CALIBRATED
+    assert profile.watts_at_low is not None
+    assert profile.watts_at_low.watts == 70.2
+
+
+# ── Scenario G: session starting too far from anchor is rejected ──────────────
+
+
+def test_session_far_from_anchor_not_promoted(clean_fixture):
+    parsed = parse_csv(clean_fixture)
+    summary = analyze(parsed.samples, profile_id="x", idle_power_w=1.8)
+    profile = _calibrated_profile(summary)
+
+    # Construct a summary whose watts_at_low is 20% above the anchor (69 W).
+    from cyclesteward.landmarks import Anchors, Landmarks
+    from cyclesteward.profile import ProfileSummary
+
+    far_summary = ProfileSummary(
+        profile_id="far",
+        sample_count=10,
+        idle_power_w=1.8,
+        anchors=Anchors(
+            watts_at_low=90.0,  # clearly not near display-empty
+            watts_at_transition=100.0,
+            taper_floor_w=10.0,
+        ),
+        active_full_wh=400.0,
+        landmarks=Landmarks(),
+        warnings=[],
+    )
+
+    promoted, reason = profile.classify_opportunistic_session(far_summary, temperature_c=20.0)
+
+    assert promoted is False
+    assert "not promoted" in reason
+    assert len(profile.temperature_observations) == 0
+
+
+# ── Scenario G2: incomplete session is rejected even if start is near anchor ──
+
+
+def test_incomplete_session_not_promoted(fixtures_dir, clean_fixture):
+    parsed_clean = parse_csv(clean_fixture)
+    summary_clean = analyze(parsed_clean.samples, profile_id="x", idle_power_w=1.8)
+    profile = _calibrated_profile(summary_clean)
+
+    # The interrupted fixture has CALIBRATION_DISTRUST (large gap).
+    parsed_interrupted = parse_csv(fixtures_dir / "synthetic-interrupted.csv")
+    summary_interrupted = analyze(
+        parsed_interrupted.samples, profile_id="interrupted", idle_power_w=1.8
+    )
+    assert any(CALIBRATION_DISTRUST in w for w in summary_interrupted.warnings)
+
+    promoted, reason = profile.classify_opportunistic_session(
+        summary_interrupted, temperature_c=20.0
+    )
+
+    assert promoted is False
+    assert "not promoted" in reason
+    assert len(profile.temperature_observations) == 0
+
+
+# ── Scenario G3: relay cutoff session is rejected ─────────────────────────────
+
+
+def test_relay_cutoff_session_not_promoted(mid_taper_cutoff_fixture, clean_fixture):
+    parsed_clean = parse_csv(clean_fixture)
+    summary_clean = analyze(parsed_clean.samples, profile_id="x", idle_power_w=1.8)
+    profile = _calibrated_profile(summary_clean)
+
+    parsed_cutoff = parse_csv(mid_taper_cutoff_fixture)
+    summary_cutoff = analyze(parsed_cutoff.samples, profile_id="cutoff", idle_power_w=1.8)
+    assert any(TAPER_AMBIGUOUS in w for w in summary_cutoff.warnings)
+
+    promoted, reason = profile.classify_opportunistic_session(
+        summary_cutoff, temperature_c=20.0
+    )
+
+    assert promoted is False
+    assert "relay cutoff" in reason
+    assert len(profile.temperature_observations) == 0
+
+
+def test_uncalibrated_profile_rejects_opportunistic(clean_fixture):
+    parsed = parse_csv(clean_fixture)
+    summary = analyze(parsed.samples, profile_id="x", idle_power_w=1.8)
+    profile = CalibrationProfile(charger_label="c", battery_label="b", meter_id="m")
+
+    promoted, reason = profile.classify_opportunistic_session(summary)
+
+    assert promoted is False
+    assert "not yet calibrated" in reason
+
+
+# ── Scenario H: calibration on imported Home Assistant history ────────────────
+
+
+def test_ha_exported_rows_produce_profile_output(fixtures_dir):
+    # real-swoop-asm-charge.csv is derived from an actual HA history export.
+    # The core must ingest it without importing Home Assistant.
+    parsed = parse_csv(fixtures_dir / "real-swoop-asm-charge.csv")
+    assert parsed.warnings == []
+
+    summary = analyze(parsed.samples, profile_id="ha-import:swoop")
+    profile = CalibrationProfile(
+        charger_label="swoop-charger",
+        battery_label="asm-battery",
+        meter_id="sensor.swoop_plug",
+    )
+    profile.ingest_full_session(
+        summary, soc_at_start=SocReport.display_empty(), timestamp=_TS
+    )
+
+    # The HA-derived session produces valid anchors even after relay-cutoff fix.
+    assert profile.watts_at_low is not None
+    assert profile.watts_at_transition is not None
+    # Taper floor is None (relay cutoff detected); that is correct behaviour.
+    assert profile.taper_floor_w is None
+    data = json.loads(profile.to_json())
+    assert data["watts_at_low"] is not None
+    assert data["watts_at_transition"] is not None
+
+
+def test_ha_export_tolerates_unknown_rows(fixtures_dir):
+    # synthetic-with-unknown-rows.csv has unknown/unavailable power and temp
+    # values; the parser must skip them and still produce usable samples.
+    parsed = parse_csv(fixtures_dir / "synthetic-with-unknown-rows.csv")
+    skipped = [w for w in parsed.warnings if "skipped" in w]
+    assert len(skipped) >= 2, "expected at least 2 skipped-row warnings"
+    assert len(parsed.samples) > 0
+
+
+def test_ha_core_has_no_homeassistant_import():
+    # ADR-0010: the pure core must not import Home Assistant.
+    import cyclesteward.calibration as cal_mod
+    import cyclesteward.profile as prof_mod
+    import cyclesteward.landmarks as lm_mod
+
+    for mod in (cal_mod, prof_mod, lm_mod):
+        assert "homeassistant" not in dir(mod)

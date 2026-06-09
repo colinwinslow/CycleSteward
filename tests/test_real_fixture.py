@@ -36,14 +36,22 @@ def test_real_session_active_wh_matches_plug_energy_meter(fixtures_dir):
     assert 560.0 < summary.active_full_wh < 610.0
 
 
-def test_real_session_known_artifacts(fixtures_dir):
-    # FINDING 1 (onset/inrush): watts_at_low latches onto the inrush ramp
-    # (~65.7 W) rather than the settled CC value (~69.7 W). Documented, not yet
-    # fixed; onset robustness is a calibration-slice refinement.
-    # FINDING 2 (mid-taper cutoff): this session was de-energized during early
-    # taper, so taper_floor_w reflects the cutoff reading, not a true CV floor.
+def test_real_session_watts_at_low_uses_settled_cc_value(fixtures_dir):
+    # FIXED (F2): inrush settling now skips the rising ramp (~65.7 W) and latches
+    # onto the first stable consecutive pair (~69.7 W).
     parsed = parse_csv(fixtures_dir / "real-swoop-asm-charge.csv")
     summary = analyze(parsed.samples, profile_id="x")
 
-    assert 60.0 < summary.anchors.watts_at_low < 72.0
-    assert summary.anchors.taper_floor_w is not None
+    assert 68.0 < summary.anchors.watts_at_low < 72.0
+
+
+def test_real_session_mid_taper_cutoff_is_detected(fixtures_dir):
+    # FIXED (G3): the session ends with a sharp relay cutoff mid-taper; the
+    # taper_floor_w is None and TAPER_AMBIGUOUS is in warnings.
+    from cyclesteward.landmarks import TAPER_AMBIGUOUS
+
+    parsed = parse_csv(fixtures_dir / "real-swoop-asm-charge.csv")
+    summary = analyze(parsed.samples, profile_id="x")
+
+    assert summary.anchors.taper_floor_w is None
+    assert any(TAPER_AMBIGUOUS in w for w in summary.warnings)

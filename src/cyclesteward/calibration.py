@@ -16,7 +16,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from .landmarks import CALIBRATION_DISTRUST
+from .landmarks import CALIBRATION_DISTRUST, TAPER_AMBIGUOUS
 from .profile import ProfileSummary
 
 SCHEMA_VERSION = 1
@@ -178,6 +178,26 @@ class PartialObservation:
 
 
 @dataclass
+class TemperatureObservation:
+    """One opportunistic full-span datapoint, carrying temperature for later compensation fitting."""
+
+    timestamp: datetime
+    active_wh: float
+    watts_at_low: Optional[float]
+    temperature_c: Optional[float] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "timestamp": self.timestamp.isoformat(),
+            "active_wh": round(self.active_wh, _WH_DP),
+            "watts_at_low": (
+                None if self.watts_at_low is None else round(self.watts_at_low, _WATT_DP)
+            ),
+            "temperature_c": self.temperature_c,
+        }
+
+
+@dataclass
 class CalibrationProfile:
     """The persisted calibration profile for one charger/battery/meter triple.
 
@@ -205,6 +225,7 @@ class CalibrationProfile:
 
     full_observations: List[FullObservation] = field(default_factory=list)
     partial_observations: List[PartialObservation] = field(default_factory=list)
+    temperature_observations: List[TemperatureObservation] = field(default_factory=list)
     soc_reports: List[SocReport] = field(default_factory=list)
 
     warnings: List[str] = field(default_factory=list)
@@ -296,6 +317,58 @@ class CalibrationProfile:
         if soc_at_start is not None:
             self.soc_reports.append(soc_at_start)
 
+    def classify_opportunistic_session(
+        self,
+        summary: ProfileSummary,
+        *,
+        temperature_c: Optional[float] = None,
+        timestamp: Optional[datetime] = None,
+        proximity_frac: float = 0.10,
+    ) -> tuple[bool, str]:
+        """Classify a completed session as an opportunistic full-span datapoint.
+
+        Returns ``(promoted, reason)``.  Promotion requires:
+        - Profile is already calibrated with a known ``watts_at_low`` anchor.
+        - Session has no ``CALIBRATION_DISTRUST`` or ``TAPER_AMBIGUOUS`` warnings.
+        - Session's ``watts_at_low`` is within ``proximity_frac`` of the profile anchor.
+
+        When promoted the ``(temperature_c, active_wh)`` pair is stored for later
+        temperature/full-Wh compensation fitting (ADR-0008).
+        """
+        if self.watts_at_low is None:
+            return False, "profile not yet calibrated; cannot classify opportunistic session"
+
+        if any(CALIBRATION_DISTRUST in w for w in summary.warnings):
+            return False, "session not trusted for calibration; not promoted"
+
+        if any(TAPER_AMBIGUOUS in w for w in summary.warnings):
+            return False, "taper floor ambiguous (likely relay cutoff); not promoted"
+
+        if summary.anchors.watts_at_low is None:
+            return False, "session has no detected CC-start wattage; not promoted"
+
+        anchor_w = self.watts_at_low.watts
+        session_w = summary.anchors.watts_at_low
+        if abs(session_w - anchor_w) / anchor_w > proximity_frac:
+            pct = abs(session_w - anchor_w) / anchor_w * 100
+            return (
+                False,
+                f"start wattage {session_w:.1f} W is {pct:.0f}% from learned anchor "
+                f"{anchor_w:.1f} W (>{proximity_frac:.0%} tolerance); not promoted",
+            )
+
+        if timestamp is None:
+            timestamp = datetime.now()
+
+        obs = TemperatureObservation(
+            timestamp=timestamp,
+            active_wh=summary.active_full_wh,
+            watts_at_low=summary.anchors.watts_at_low,
+            temperature_c=temperature_c,
+        )
+        self.temperature_observations.append(obs)
+        return True, "opportunistic full-span datapoint"
+
     def target_wattage(
         self,
         target_soc_pct: float,
@@ -344,6 +417,7 @@ class CalibrationProfile:
             "assumptions": self.assumptions.to_dict() if self.assumptions else None,
             "full_observations": [obs.to_dict() for obs in self.full_observations],
             "partial_observations": [obs.to_dict() for obs in self.partial_observations],
+            "temperature_observations": [obs.to_dict() for obs in self.temperature_observations],
             "soc_reports": [r.to_dict() for r in self.soc_reports],
             "warnings": list(self.warnings),
         }

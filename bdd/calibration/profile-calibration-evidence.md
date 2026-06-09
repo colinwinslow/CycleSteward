@@ -190,3 +190,183 @@ tests/test_calibration.py::test_overhead_in_json_carries_uncertainty_note PASSED
 
 21 passed in 1.39s
 ```
+
+---
+
+# Slice F–H evidence
+
+Slice: scenarios F, F2, G, G2, G3, H  
+Date: 2026-06-09  
+Command: `.venv/bin/pytest tests/test_calibration.py tests/test_landmarks.py tests/test_real_fixture.py -v` (44 passed, 0 failed)  
+Full suite: `65 passed` — no regressions  
+Lint: `ruff check src/ tests/` — all checks passed
+
+---
+
+## Scenario F — a naturally-occurring near-empty-to-full session is reused
+
+Input: `fixtures/synthetic-low-to-full.csv`, calibrated profile (watts\_at\_low = 69.0 W), temperature\_c = 21.0.
+
+`classify_opportunistic_session` call:
+
+```
+promoted=True, reason='opportunistic full-span datapoint'
+```
+
+Profile's `temperature_observations` after promotion:
+
+```json
+[
+  {
+    "timestamp": "2026-06-09T12:00:00+00:00",
+    "active_wh": 467.7333,
+    "watts_at_low": 69.0,
+    "temperature_c": 21.0
+  }
+]
+```
+
+Session starting wattage (69.0 W) is within 10% of the anchor (69.0 W). Completion was detected. Temperature/Wh pair stored without prompting. ✓
+
+---
+
+## Scenario F2 — inrush settling yields a representative watts\_at\_low
+
+Input: `fixtures/synthetic-inrush-settling.csv` (inrush ramp: 46 W → 62 W → 70.2 W before settling).
+
+```
+watts_at_low = 70.2 W   ← settled CC (onset sample was 46.0 W)
+```
+
+The inrush onset crossed the 50% threshold at 46 W, but the first stable consecutive pair
+(|70.8 − 70.2| / 70.2 = 0.85% < 5%) landed at 70.2 W. `watts_at_low` reflects the
+settled bulk-charge wattage, not the rising-edge artefact. ✓
+
+Real-data validation (Swoop ASM fixture, was 65.74 W, now 69.72 W):
+
+```
+test_real_session_watts_at_low_uses_settled_cc_value  PASSED   68.0 < 69.72 < 72.0
+```
+
+---
+
+## Scenario G — a session starting too far from the low anchor is rejected
+
+Input: synthesised summary with `watts_at_low = 90.0 W` against a calibrated profile with anchor 69.0 W.
+
+```
+promoted=False
+reason='start wattage 90.0 W is 30% from learned anchor 69.0 W (>10% tolerance); not promoted'
+temperature_observations length=0
+```
+
+The 30% distance exceeds the 10% proximity tolerance. No observation stored. ✓
+
+---
+
+## Scenario G2 — an incomplete session is not promoted even if it starts near the anchor
+
+Input: `fixtures/synthetic-interrupted.csv` — starts at 69.0 W (same as the anchor), so the
+proximity gate would pass, but the session has a 4-hour sampling gap that triggers
+CALIBRATION\_DISTRUST.
+
+```
+promoted=False
+reason='session not trusted for calibration; not promoted'
+```
+
+Starting wattage (69.0 W) is at the anchor (69.0 W) — proximity is satisfied. The classifier
+still rejects because `CALIBRATION_DISTRUST` is present in warnings (the gap gate fires before
+proximity is checked). The scenario's core guarantee — "even if it starts near the anchor" —
+is directly exercised. ✓
+
+---
+
+## Scenario G3 — a sharp mid-taper relay cutoff is not mistaken for a natural taper floor
+
+Input: `fixtures/synthetic-mid-taper-cutoff.csv` (full CC to peak, then one taper sample at 78.5 W, then immediate 0 W).
+
+Landmark detection:
+
+```
+taper_floor_w = None
+taper warning: 'taper floor candidate (78.5 W) is 93% of peak;
+  taper_floor_w is unreliable due to apparent relay cutoff'
+```
+
+`classify_opportunistic_session`:
+
+```
+promoted=False
+reason='taper floor ambiguous (likely relay cutoff); not promoted'
+```
+
+78.5 W is 93% of peak active — well above the 35% cap for a genuine taper floor.
+`taper_floor_w` is not assigned. Warning surfaced. Session not promoted. ✓
+
+Real-data validation (Swoop ASM: 68.86 W → 0 W in 18 s, was erroneously assigned a floor):
+
+```
+test_real_session_mid_taper_cutoff_is_detected  PASSED   taper_floor_w is None, TAPER_AMBIGUOUS present
+```
+
+---
+
+## Scenario H — calibration runs on imported Home Assistant history
+
+Input: `fixtures/real-swoop-asm-charge.csv` (derived from HA recorder export; 80 samples, temperature column present).
+
+Profile JSON from `ingest_full_session`:
+
+```json
+{
+  "state": "calibrated",
+  "watts_at_low": {
+    "watts": 69.72,
+    "assumed_soc_label": "display_empty",
+    "confidence": "high"
+  },
+  "watts_at_transition": {
+    "watts": 83.9,
+    "assumed_soc_label": "cc_cv_transition",
+    "confidence": "high"
+  },
+  "taper_floor_w": null,
+  "active_full_wh": 586.7915,
+  "warnings": []
+}
+```
+
+State is `calibrated`. Wattage anchors extracted correctly. Relay-cutoff flag on `taper_floor_w` is expected (this session ended mid-taper). No `homeassistant` import in any core module. ✓
+
+Unknown/unavailable row tolerance (`synthetic-with-unknown-rows.csv`):
+
+```
+test_ha_export_tolerates_unknown_rows  PASSED   ≥2 skipped-row warnings, len(samples) > 0
+```
+
+---
+
+## Test run output (raw — slice F–H additions)
+
+```
+tests/test_calibration.py::test_opportunistic_session_is_promoted PASSED
+tests/test_calibration.py::test_opportunistic_session_stores_temperature_wh_pair PASSED
+tests/test_calibration.py::test_opportunistic_promotion_appears_in_json PASSED
+tests/test_calibration.py::test_inrush_fixture_calibrated_with_settled_watts_at_low PASSED
+tests/test_calibration.py::test_session_far_from_anchor_not_promoted PASSED
+tests/test_calibration.py::test_incomplete_session_not_promoted PASSED
+tests/test_calibration.py::test_relay_cutoff_session_not_promoted PASSED
+tests/test_calibration.py::test_uncalibrated_profile_rejects_opportunistic PASSED
+tests/test_calibration.py::test_ha_exported_rows_produce_profile_output PASSED
+tests/test_calibration.py::test_ha_export_tolerates_unknown_rows PASSED
+tests/test_calibration.py::test_ha_core_has_no_homeassistant_import PASSED
+tests/test_landmarks.py::test_inrush_ramp_settled_past_for_watts_at_low PASSED
+tests/test_landmarks.py::test_no_inrush_session_watts_at_low_unchanged PASSED
+tests/test_landmarks.py::test_mid_taper_cutoff_sets_taper_floor_to_none PASSED
+tests/test_landmarks.py::test_natural_taper_floor_not_flagged_as_cutoff PASSED
+tests/test_real_fixture.py::test_real_session_watts_at_low_uses_settled_cc_value PASSED
+tests/test_real_fixture.py::test_real_session_mid_taper_cutoff_is_detected PASSED
+
+65 passed in 3.19s (full suite)
+```

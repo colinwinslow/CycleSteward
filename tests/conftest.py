@@ -18,3 +18,13 @@ def fixtures_dir() -> Path:
 @pytest.fixture
 def clean_fixture() -> Path:
     return FIXTURES_DIR / "synthetic-low-to-full.csv"
+
+
+@pytest.fixture
+def inrush_fixture() -> Path:
+    return FIXTURES_DIR / "synthetic-inrush-settling.csv"
+
+
+@pytest.fixture
+def mid_taper_cutoff_fixture() -> Path:
+    return FIXTURES_DIR / "synthetic-mid-taper-cutoff.csv"
