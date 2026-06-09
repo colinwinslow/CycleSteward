@@ -1,8 +1,9 @@
 """Session-control state machine: charge-to-target, scheduling, cutoff, and SoC estimation.
 
-Implements the pure core of ADR-0002 (wattage-anchor SoC model), ADR-0008
-(temperature gating and compensation), and ADR-0009 (modes/scheduling/safe
-defaults).  All I/O is injected; this module has no Home Assistant imports.
+Implements the pure core of ADR-0002 (wattage-anchor SoC model), ADR-0005
+(automation guardrails), ADR-0008 (temperature gating and compensation), and
+ADR-0009 (modes/scheduling/safe defaults).  All I/O is injected; this module
+has no Home Assistant imports.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from .calibration import CalibrationProfile, ProfileState, SocAssumptions
+from .guardrails import GuardrailEvaluator, GuardrailFault, GuardrailsConfig
 
 
 class ChargeMode(str, Enum):
@@ -59,20 +61,24 @@ class SocEstimate:
 
 @dataclass
 class TickResult:
-    """Result of one controller tick: action, new state, optional SoC, and reason."""
+    """Result of one controller tick: action, new state, optional SoC, reason, and optional fault."""
 
     action: SessionAction
     state: SessionState
     soc_estimate: Optional[SocEstimate]
     reason: str
+    fault: Optional[GuardrailFault] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d: Dict[str, Any] = {
             "action": self.action.value,
             "state": self.state.value,
             "soc_estimate": self.soc_estimate.to_dict() if self.soc_estimate else None,
             "reason": self.reason,
         }
+        if self.fault is not None:
+            d["fault"] = self.fault.value
+        return d
 
 
 @dataclass
@@ -112,6 +118,7 @@ class SessionController:
       IDLE ──(mode set, future schedule)──► WAITING_FOR_SCHEDULE ──(time arrived)──► CHARGING
       IDLE ──(temperature too hot)──► HEAT_DELAY ──(cooled)──► IDLE ──► CHARGING
       Any state ──(morning reset)──► IDLE (mode cleared)
+      Any state ──(guardrail fault)──► FAULTED (requires explicit user action to resume)
     """
 
     def __init__(
@@ -119,10 +126,13 @@ class SessionController:
         profile: CalibrationProfile,
         config: Optional[SessionConfig] = None,
         temp_config: Optional[TemperatureConfig] = None,
+        guardrails_config: Optional[GuardrailsConfig] = None,
     ) -> None:
         self._profile = profile
         self._config = config or SessionConfig()
         self._temp_config = temp_config or TemperatureConfig()
+        self._guardrails_config = guardrails_config or GuardrailsConfig()
+        self._guardrails = GuardrailEvaluator(self._guardrails_config)
 
         self._mode: ChargeMode = ChargeMode.OFF
         self._state: SessionState = SessionState.IDLE
@@ -150,12 +160,14 @@ class SessionController:
         self._state = SessionState.IDLE
         self._taper_start = None
         self._heat_delay_start = None
+        self._guardrails.reset()
 
     def manual_override_on(self) -> None:
         """User manually turns the plug on.
 
         If an active mode is set, this transitions directly to CHARGING so the
         cutoff evaluator still applies on every subsequent tick (ADR-0009).
+        Guardrail session-start is lazy-initialised on the first CHARGING tick.
         """
         if self._mode in (ChargeMode.CHARGE_TO_TARGET, ChargeMode.CHARGE_TO_FULL):
             self._state = SessionState.CHARGING
@@ -165,10 +177,15 @@ class SessionController:
         power_w: Optional[float],
         temperature_c: Optional[float],
         now: datetime,
+        *,
+        plug_is_on: Optional[bool] = None,
     ) -> TickResult:
         """Evaluate one sample and return the action to take.
 
         ``power_w`` and ``temperature_c`` may be ``None`` (unknown/unavailable).
+        ``plug_is_on`` is the observed smart-plug state; used to confirm TURN_OFF
+        commands.  Pass ``None`` when the plug state is not known.
+
         The controller defaults safely on missing readings (hold, no cutoff misfire).
         """
         # 1. Morning reset: once per day past the configured time, clear mode → IDLE.
@@ -179,18 +196,37 @@ class SessionController:
                 self._state = SessionState.IDLE
                 self._taper_start = None
                 self._heat_delay_start = None
+                self._guardrails.reset()
                 return TickResult(
                     SessionAction.NONE, SessionState.IDLE, None,
                     "morning reset: modes cleared"
                 )
 
-        # 2. Mode off → stay idle (preserve DONE_LATCHED_OFF / FAULTED as-is).
+        # 2. Command confirmation: fires before terminal-state short-circuits so
+        #    a DONE_LATCHED_OFF session can still be faulted if the plug ignores
+        #    the TURN_OFF command.
+        if self._state != SessionState.FAULTED:
+            cmd_guard = self._guardrails.check_command_confirmation(plug_is_on, now)
+            if cmd_guard is not None:
+                self._state = SessionState.FAULTED
+                self.event_log.append(
+                    f"guardrail/{cmd_guard.fault.value}: {cmd_guard.reason}"
+                )
+                return TickResult(
+                    SessionAction.NONE,
+                    SessionState.FAULTED,
+                    None,
+                    cmd_guard.reason,
+                    fault=cmd_guard.fault,
+                )
+
+        # 3. Mode off → stay idle (preserve DONE_LATCHED_OFF / FAULTED as-is).
         if self._mode == ChargeMode.OFF:
             if self._state not in (SessionState.DONE_LATCHED_OFF, SessionState.FAULTED):
                 self._state = SessionState.IDLE
             return TickResult(SessionAction.NONE, self._state, None, "mode off")
 
-        # 3. Terminal states: latch and fault hold until explicit action.
+        # 4. Terminal states: latch and fault hold until explicit action.
         if self._state == SessionState.DONE_LATCHED_OFF:
             return TickResult(
                 SessionAction.NONE, SessionState.DONE_LATCHED_OFF, None,
@@ -202,14 +238,14 @@ class SessionController:
                 "faulted; awaiting user action"
             )
 
-        # 4. Missing/non-numeric power: hold safely, no progress, no cutoff misfire.
+        # 5. Missing/non-numeric power: hold safely, no progress, no cutoff misfire.
         if power_w is None:
             return TickResult(
                 SessionAction.NONE, self._state, None,
                 "power reading unavailable; holding"
             )
 
-        # 5. Temperature gate (applies before starting a new charge).
+        # 6. Temperature gate (applies before starting a new charge).
         if self._state in (
             SessionState.IDLE,
             SessionState.WAITING_FOR_SCHEDULE,
@@ -219,7 +255,7 @@ class SessionController:
             if gate is not None:
                 return gate
 
-        # 6. Schedule check: if an active mode is set and we are not yet charging,
+        # 7. Schedule check: if an active mode is set and we are not yet charging,
         #    check whether to wait or start.
         if self._state in (SessionState.IDLE, SessionState.WAITING_FOR_SCHEDULE):
             if self._config.scheduled_start is not None:
@@ -231,17 +267,68 @@ class SessionController:
                     )
             # No schedule, or past the scheduled start time: begin charging.
             self._state = SessionState.CHARGING
+            self._guardrails.on_charging_started(now)
             return TickResult(
                 SessionAction.TURN_ON, SessionState.CHARGING, None, "starting charge"
             )
 
-        # 7. Charging: evaluate the cutoff for the active mode.
+        # 8. Charging: run guardrails, then evaluate the cutoff for the active mode.
         if self._state == SessionState.CHARGING:
+            idle_w = self._profile.idle_power_w or 0.0
+            self._guardrails.accumulate(power_w, idle_w, now)
+
+            # Guardrail A: max runtime.
+            rt_guard = self._guardrails.check_runtime(now)
+            if rt_guard is not None:
+                self._state = SessionState.FAULTED
+                self.event_log.append(
+                    f"guardrail/{rt_guard.fault.value}: {rt_guard.reason}"
+                )
+                return TickResult(
+                    SessionAction.TURN_OFF,
+                    SessionState.FAULTED,
+                    None,
+                    rt_guard.reason,
+                    fault=rt_guard.fault,
+                )
+
+            # Guardrail B: max active Wh.
+            effective_max_wh = self._guardrails_config.max_active_wh
+            if effective_max_wh is None and self._profile.active_full_wh is not None:
+                effective_max_wh = self._profile.active_full_wh * 1.2
+            wh_guard = self._guardrails.check_active_wh(effective_max_wh)
+            if wh_guard is not None:
+                self._state = SessionState.FAULTED
+                self.event_log.append(
+                    f"guardrail/{wh_guard.fault.value}: {wh_guard.reason}"
+                )
+                return TickResult(
+                    SessionAction.TURN_OFF,
+                    SessionState.FAULTED,
+                    None,
+                    wh_guard.reason,
+                    fault=wh_guard.fault,
+                )
+
             soc_est = self._estimate_soc(power_w, temperature_c)
 
             if self._mode == ChargeMode.CHARGE_TO_TARGET:
                 target = self._adjusted_target_wattage(temperature_c)
                 if target is not None and power_w >= target:
+                    # Guardrail C: relay chatter check before committing TURN_OFF.
+                    relay_guard = self._guardrails.check_relay(True, now)
+                    if relay_guard is not None:
+                        self.event_log.append(
+                            f"guardrail/{relay_guard.fault.value}: {relay_guard.reason}"
+                        )
+                        return TickResult(
+                            SessionAction.NONE,
+                            SessionState.CHARGING,
+                            soc_est,
+                            f"relay suppressed: {relay_guard.reason}",
+                            fault=relay_guard.fault,
+                        )
+                    self._guardrails.on_turn_off_committed(now)
                     self._state = SessionState.DONE_LATCHED_OFF
                     return TickResult(
                         SessionAction.TURN_OFF,
@@ -262,6 +349,20 @@ class SessionController:
                         (now - self._taper_start).total_seconds()
                         >= self._config.taper_below_floor_seconds
                     ):
+                        # Guardrail C: relay chatter check before committing TURN_OFF.
+                        relay_guard = self._guardrails.check_relay(True, now)
+                        if relay_guard is not None:
+                            self.event_log.append(
+                                f"guardrail/{relay_guard.fault.value}: {relay_guard.reason}"
+                            )
+                            return TickResult(
+                                SessionAction.NONE,
+                                SessionState.CHARGING,
+                                soc_est,
+                                f"relay suppressed: {relay_guard.reason}",
+                                fault=relay_guard.fault,
+                            )
+                        self._guardrails.on_turn_off_committed(now)
                         self._state = SessionState.DONE_LATCHED_OFF
                         return TickResult(
                             SessionAction.TURN_OFF,

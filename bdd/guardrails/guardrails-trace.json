@@ -1,0 +1,90 @@
+{
+  "scenario": "guardrail-A: IDLE \u2192 CHARGING \u2192 FAULTED (max-runtime)",
+  "config": {
+    "max_runtime_seconds": 300.0
+  },
+  "profile": {
+    "watts_at_low": 70.0,
+    "watts_at_transition": 100.0,
+    "active_full_wh": 400.0
+  },
+  "events": [
+    {
+      "timestamp": "2026-01-10T04:00:00+00:00",
+      "power_w": 70.0,
+      "action": "turn_on",
+      "state": "charging",
+      "soc_estimate": null,
+      "reason": "starting charge"
+    },
+    {
+      "timestamp": "2026-01-10T04:01:00+00:00",
+      "power_w": 75.0,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 13.3,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      },
+      "reason": "charging"
+    },
+    {
+      "timestamp": "2026-01-10T04:02:00+00:00",
+      "power_w": 80.0,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 26.7,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      },
+      "reason": "charging"
+    },
+    {
+      "timestamp": "2026-01-10T04:03:00+00:00",
+      "power_w": 82.0,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 32.0,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      },
+      "reason": "charging"
+    },
+    {
+      "timestamp": "2026-01-10T04:04:00+00:00",
+      "power_w": 84.0,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 37.3,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      },
+      "reason": "charging"
+    },
+    {
+      "timestamp": "2026-01-10T04:05:01+00:00",
+      "power_w": 84.0,
+      "action": "turn_off",
+      "state": "faulted",
+      "soc_estimate": null,
+      "reason": "max runtime 300 s exceeded (301 s elapsed)",
+      "fault": "max_runtime"
+    },
+    {
+      "timestamp": "2026-01-10T04:05:20+00:00",
+      "power_w": 84.0,
+      "action": "none",
+      "state": "faulted",
+      "soc_estimate": null,
+      "reason": "faulted; awaiting user action"
+    }
+  ]
+}
