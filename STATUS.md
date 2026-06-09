@@ -1,18 +1,28 @@
 # STATUS.md
 
-**Last updated:** 2026-06-08 (fixture analyzer anchor artifact implemented and verified)
-**Phase:** Phase 1 - pure core (anchor artifact landed)
-**Next bounded packet:** Profile-calibration slice (`docs/specs/profile-calibration.md`): persist a charger profile from a full session; locate the target wattage (e.g. 80%) along the CC ramp from the wattage anchors + active-Wh integral; capture user-supplied rated capacity -> overhead estimate (ADR-0007); and harden onset detection so `watts_at_low` settles past the inrush ramp (real-data finding). Proof: unit tests, `bdd/calibration/profile-calibration-bdd.md` evidence, profile JSON read back.
+**Last updated:** 2026-06-09 (profile-calibration slice A-E implemented and verified)
+**Phase:** Phase 1 - pure core
+**Next bounded packet:** Profile-calibration slice F-H (`docs/specs/profile-calibration.md`): opportunistic full-session detection (accept + reject), temperature/full-Wh learning (ADR-0008), and HA-history import as plain sample rows (ADR-0010). Plus the two carried real-data findings: onset robustness (`watts_at_low` settling past inrush) and taper-floor vs. relay-cutoff disambiguation. Proof: unit tests, BDD scenarios F/G/H evidence, profile JSON from HA-imported rows.
 **Current readiness:** READY-FOR-NEXT-PACKET
 
 ## Recent sessions (rolling, last 5)
 
+- **2026-06-09** - Profile-calibration slice A-E - Added `CalibrationProfile` model (`src/cyclesteward/calibration.py`): full-session ingest stores wattage anchors + taper floor + active Wh; `target_wattage()` linearly interpolates the 80% cutoff wattage along the CC ramp; `SocReport` stores dot-count inputs as coarse intervals (not exact %) per invariant #6; partial sessions record without overwriting the full-Wh denominator; bad-data sessions (CALIBRATION_DISTRUST) are stored but not promoted to trusted; rated-capacity → overhead ratio with `confidence: low`. 21 new tests (49 total), ruff clean. BDD A-E evidence written; review-bdd-evidence verdict OK (one prose fix applied).
 - **2026-06-08** - Fixture analyzer anchor slice - Built the pure core (`src/cyclesteward/`: samples/energy/landmarks/profile/cli) turning a charge-session CSV (or exported HA history) into a deterministic profile-summary JSON with the wattage anchors + active Wh + landmarks. 28 tests pass, ruff clean. Grew the fixture library (clean/noisy/interrupted/malformed/unknown) and added a real Swoop ASM session; integrated active Wh matched the plug's energy meter to ~1%. BDD A-D evidence written; review-bdd-evidence verdict OK.
 - **2026-06-08** - Calibration & rescue refinements - Added rated-capacity input + overhead estimation and opportunistic near-empty-to-full calibration (incl. temperature/full-Wh learning) to ADR-0007; added ADR-0010 for calibrating the pure core on imported Home Assistant history; made low-battery probe/rescue a toggleable, off-by-default feature (ADR-0005). Updated the calibration/rescue/setup specs + BDDs and the architecture doc.
 - **2026-06-08** - Design reconciliation - Folded the prior e-bike chat design into the docs: reframed ADR-0002 to wattage-anchor SoC estimation (active Wh demoted to calibration/guardrail), required a dedicated metering plug in ADR-0001, added ADR-0008 (temperature policy) and ADR-0009 (modes/scheduling/safe defaults), updated CLAUDE.md invariant #4, expanded the calibration/session-control/guardrails/setup specs + BDDs, and added the HA-adapter-lessons research note.
 - **2026-06-08** - Workflow port + rename - Ported the agentic workflow from Codex back to native Claude Code (.claude/ commands, agents, SessionStart hook) and renamed ChargeShape to CycleSteward across the repo.
 
 ## Active work
+
+### Profile-calibration slice A-E (DONE 2026-06-09)
+
+- [x] CalibrationProfile model with `ingest_full_session`, `ingest_partial_session`, `target_wattage`, `to_json`.
+- [x] SocReport stores coarse intervals (dots, display_empty), never exact percentages.
+- [x] Partial observations do not overwrite the full active-Wh denominator.
+- [x] Bad-data sessions (CALIBRATION_DISTRUST) are stored but not promoted to trusted; state → CALIBRATING.
+- [x] Rated capacity → overhead_ratio with `confidence: low` and uncertainty note.
+- [x] BDD evidence A-E written and review-bdd-evidence verdict OK.
 
 ### Fixture analyzer anchor artifact (DONE 2026-06-08)
 
