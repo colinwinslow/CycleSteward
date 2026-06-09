@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git fetch:*)",
+      "Bash(git rev-list:*)",
+      "Bash(git log:*)",
+      "Bash(git stash:*)",
+      "Bash(git pull --ff-only:*)",
+      "Bash(ls:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python -m ruff:*)",
+      "Bash(python -m pip install -e .:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '=== /startup drift-check (SessionStart hook) ==='; git fetch origin --quiet 2>/dev/null || echo '(no origin remote or fetch failed)'; echo '--- working tree (git status --porcelain) ---'; git status --porcelain; echo '--- commits behind origin/main ---'; git rev-list --count main..origin/main 2>/dev/null || echo 'n/a (no upstream main)'"
+          }
+        ]
+      }
+    ]
+  }
+}
