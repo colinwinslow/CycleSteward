@@ -1,7 +1,7 @@
 ---
 status: draft
 date: 2026-06-08
-depends-on-adrs: [0001, 0005]
+depends-on-adrs: [0001, 0005, 0008]
 ---
 
 # Guardrails: Automation fault detection
@@ -28,16 +28,26 @@ CycleSteward enforces:
 
 - maximum session runtime
 - maximum active Wh per session
-- optional minimum and maximum temperature
+- **freeze lockout**: refuse to start charging below the configured freeze
+  threshold (with sensor-location offset); this is a hard safety stop, not a
+  delay (ADR-0008)
+- **heat delay**: above the configured heat-delay threshold, hold off starting
+  and retry until it cools, skipping with notification past the deadline — a
+  distinct, non-fault waiting state (ADR-0008)
 - stale meter timeout
 - switch command confirmation
 - minimum on/off durations and relay-cycle limit
 - off-after-target latch
 - abnormal curve shape fault
+- **robustness to `unknown`/`unavailable`**: a transient missing/non-numeric
+  reading must default safely (treat as no-progress / hold), never crash the
+  evaluator
 - notification/event emission for faults
 
 Faulting should turn off the plug when possible, mark the session as faulted,
-and require explicit policy or user action before resuming.
+and require explicit policy or user action before resuming. Temperature gating
+(freeze lockout, heat delay) prevents starting rather than faulting an active
+session, except where a reading goes stale mid-session.
 
 ## Anchor artifact
 

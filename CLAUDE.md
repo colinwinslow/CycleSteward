@@ -56,9 +56,11 @@ If the question does not fit the table, ask. Do not guess.
 3. **Profile scope is narrow** - A learned profile belongs to one
    charger+battery+metering-device configuration. Changing any member invalidates
    or forks the profile. (`ADR-0002`, `ADR-0007`)
-4. **Active wall energy is the primary progress metric** - Integrate
-   `max(power_w - idle_w, 0)` over time for session energy. Do not use raw wall
-   watts as stored energy. (`ADR-0002`)
+4. **Wattage is the primary SoC/cutoff signal; active Wh is for calibration** -
+   Estimate SoC and trigger cutoff from instantaneous CC-phase wattage, mapped
+   between two learned anchors. Use integrated `max(power_w - idle_w, 0)` for
+   calibration (locating the target wattage) and as a max-energy guardrail, not
+   as the runtime SoC metric. (`ADR-0002`)
 5. **Learn curve features; do not hard-code universal thresholds** - Charger
    shape detection may use CC/CV features such as rising bulk power, peak/knee,
    taper, and completion, but fixed watt values and knee-equals-SoC rules are

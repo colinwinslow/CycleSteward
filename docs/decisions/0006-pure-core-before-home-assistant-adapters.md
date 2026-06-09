@@ -48,5 +48,6 @@ core.
 
 ## References
 
+- ADR-0010: Calibrating the pure core on Home Assistant history
 - `docs/specs/fixture-analyzer-anchor.md`
 - `bdd/anchor/fixture-analyzer-anchor-bdd.md`

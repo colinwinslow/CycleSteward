@@ -22,7 +22,7 @@ def test_agent_contract_names_load_bearing_invariants() -> None:
     for invariant in [
         "Wrapper, not charger",
         "Estimates, not BMS truth",
-        "Active wall energy is the primary progress metric",
+        "Wattage is the primary SoC/cutoff signal; active Wh is for calibration",
         "Core model before HA plumbing",
     ]:
         assert invariant in contract

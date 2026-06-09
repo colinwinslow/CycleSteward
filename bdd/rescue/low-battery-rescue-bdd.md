@@ -11,6 +11,13 @@ window is later, while preventing uncontrolled periodic pulsing or full charging
 
 ## Scenarios
 
+### Scenario A0 - feature disabled means no probing
+
+**Given** the low-battery probe/rescue feature is off (the default)
+**When** the bike is plugged in and a probe might otherwise run
+**Then** CycleSteward never energizes the plug to probe and the rescue controller
+stays inert; the plug is only energized by explicit modes or schedule
+
 ### Scenario A - probe detects very-low signature and performs bounded rescue
 
 **Given** a calibrated profile has a learned very-low initial power band and the

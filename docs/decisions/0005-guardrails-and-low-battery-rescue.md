@@ -20,12 +20,15 @@ scheduled charge window.
 
 ## Decision
 
-**CycleSteward will include automation guardrails and a bounded low-battery rescue
-path.** Guardrails include maximum runtime, maximum active Wh, temperature bounds,
-stale-meter detection, plug command verification, no rapid relay cycling, and an
-off-after-target latch. Low-battery rescue uses a bounded probe to classify the
-initial charging signature and, when it resembles a learned very-low state, adds
-a small bounded amount of active Wh before returning to normal scheduling.
+**CycleSteward will always enforce automation guardrails, and will offer an
+optional, bounded low-battery rescue path that is off by default.** Guardrails
+include maximum runtime, maximum active Wh, temperature bounds, stale-meter
+detection, plug command verification, no rapid relay cycling, and an
+off-after-target latch; these are always on. Low-battery rescue is a **toggleable
+feature**: when enabled, it uses a bounded probe to classify the initial charging
+signature and, when it resembles a learned very-low state, adds a small bounded
+amount of active Wh before returning to normal scheduling. When the toggle is off,
+CycleSteward never energizes the plug to probe.
 
 ## Rationale
 
@@ -48,6 +51,8 @@ a small bounded amount of active Wh before returning to normal scheduling.
 - The integration must track session states explicitly.
 - Charging control must verify that commands took effect or fault.
 - Rescue behavior must be energy-bounded, runtime-bounded, and profile-aware.
+- Probe/rescue must be opt-in; with the toggle off there is no probing behavior
+  and the plug is only energized by explicit modes or schedule.
 
 **Open:**
 - What default rescue amount should be used before a profile exists?

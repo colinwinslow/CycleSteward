@@ -39,6 +39,29 @@ limit or minimum dwell time has not elapsed
 **Then** CycleSteward records a switch-command fault and emits a notification or
 event
 
+### Scenario E - freeze lockout refuses to start charging when cold
+
+**Given** an optional temperature sensor reports below the configured freeze
+threshold (after the sensor-location offset)
+**When** a charge would otherwise start
+**Then** CycleSteward refuses to energize the plug and records a freeze-lockout
+reason; a battery merely sitting cold is never acted on
+
+### Scenario F - heat delays charging rather than blocking it
+
+**Given** the temperature is above the configured heat-delay threshold
+**When** a scheduled charge would otherwise begin
+**Then** CycleSteward holds in a non-fault waiting state and retries as it cools,
+and only skips with a notification if it has not cooled by the configured deadline
+
+### Scenario G - missing or non-numeric readings default safely
+
+**Given** the power or temperature reading is `unknown`/`unavailable` or
+non-numeric for a sample
+**When** the guardrail evaluator runs
+**Then** it treats the reading as no-progress / hold using a safe default and does
+not crash or misfire a cutoff
+
 ## Evidence
 
 The implementing slice produces an evidence file at

@@ -1,7 +1,7 @@
 ---
 status: draft
 date: 2026-06-08
-depends-on-adrs: [0002, 0003, 0006, 0007]
+depends-on-adrs: [0001, 0002, 0003, 0006, 0007]
 ---
 
 # Anchor: Fixture analyzer profile summary
@@ -21,8 +21,10 @@ model before Home Assistant plumbing.
 
 The project needs proof that a wall-power session can be turned into useful
 profile data. The first visible artifact should be simple: feed in a CSV fixture
-and write a JSON profile summary with idle-subtracted active Wh and basic curve
-landmarks.
+and write a JSON profile summary with the two wattage anchors (the primary signal
+under ADR-0002), the idle-subtracted active Wh used to calibrate them, and basic
+curve landmarks. Because a dedicated metering plug is assumed (ADR-0001),
+`idle_power_w` is only the charger's own standby.
 
 ## Behavior contract
 
@@ -46,6 +48,11 @@ The analyzer outputs JSON containing at least:
   "profile_id": "fixture:<name>",
   "sample_count": 0,
   "idle_power_w": 0.0,
+  "anchors": {
+    "watts_at_low": null,
+    "watts_at_transition": null,
+    "taper_floor_w": null
+  },
   "active_full_wh": 0.0,
   "landmarks": {
     "active_start_timestamp": null,
@@ -57,6 +64,11 @@ The analyzer outputs JSON containing at least:
   "warnings": []
 }
 ```
+
+`watts_at_low` is the CC-start active wattage, `watts_at_transition` is the
+wattage at the CC->CV peak, and `taper_floor_w` is the settled near-idle wattage
+before completion. These are the wattage anchors (ADR-0002); `active_full_wh` is
+the calibration aid, not the headline metric.
 
 Exact schema may evolve, but the artifact must be inspectable and deterministic
 for a fixture.

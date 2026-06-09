@@ -16,9 +16,10 @@ a deterministic profile-summary JSON that can be inspected on disk.
 **Given** a CSV fixture with timestamped wall-power samples for a synthetic
 low-to-full CC/CV-like charge session and a known idle power baseline
 **When** the fixture analyzer runs against that CSV
-**Then** it writes a JSON profile summary containing sample count, idle power,
-positive active full Wh, peak power, peak timestamp, taper candidate, completion
-candidate, and no fatal warnings
+**Then** it writes a JSON profile summary containing sample count, idle power, the
+wattage anchors (`watts_at_low`, `watts_at_transition`, `taper_floor_w`), the
+calibration active full Wh, peak power, peak timestamp, taper candidate,
+completion candidate, and no fatal warnings
 
 ### Scenario B - idle subtraction prevents standby power from becoming charge energy
 

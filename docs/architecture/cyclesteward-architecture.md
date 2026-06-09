@@ -31,7 +31,7 @@ Pure CycleSteward core
         |
         v
 Artifacts and evidence
-  - fixture CSV in
+  - fixture CSV or exported Home Assistant history in (plain rows; ADR-0010)
   - profile-summary JSON out
   - BDD evidence markdown out
 ```
@@ -41,21 +41,32 @@ Artifacts and evidence
 ### Charger profile
 
 A profile is scoped to one charger, one battery or battery family, and one
-metering device. It stores idle power, active full-charge Wh observations,
-learned curve landmarks, completion/taper behavior, sampling assumptions, and
-uncertainty metadata.
+metering device. It stores idle power, the wattage anchors, the user-supplied
+rated capacity and derived overhead estimate, active full-charge Wh observations
+(including opportunistic full-span sessions), learned curve landmarks,
+completion/taper behavior, the temperature/full-Wh relationship, sampling
+assumptions, and uncertainty metadata.
 
-### Active wall Wh
+### Wattage-anchor SoC estimate
 
-The primary progress metric is:
+The primary SoC estimate and cutoff trigger is instantaneous CC-phase wall
+wattage, mapped to SoC by linear interpolation between two learned anchors
+(`WATTS_AT_LOW`/`SOC_AT_LOW` and `WATTS_AT_TRANSITION`/`SOC_AT_TRANSITION`). A
+given wattage maps to a given SoC regardless of where the charge started, so the
+estimate works even when the bike was not plugged in from empty. See ADR-0002.
+
+### Active wall Wh (calibration aid)
 
 ```text
 active_power_w = max(measured_power_w - idle_power_w, 0)
 active_Wh = integral(active_power_w over time)
 ```
 
-This is not stored battery energy and not true BMS SoC. It is a repeatable
-wall-side proxy used for per-profile charge progress.
+This is not stored battery energy and not true BMS SoC. It is used to calibrate
+a full low-to-full session — locating the wattage that corresponds to a target
+percentage — and as a max-energy guardrail. It is not the runtime SoC metric.
+Because a dedicated metering plug is required (ADR-0001), `idle_power_w` is only
+the charger's own standby, not a shared-circuit baseline.
 
 ### Curve landmarks
 
@@ -90,6 +101,10 @@ OFF_IDLE
   -> FAULT
 ```
 
+`PROBING` and `RESCUE_CHARGE` are only reachable when the optional low-battery
+probe/rescue feature is enabled (ADR-0005); with it off, the plug is energized
+only by explicit modes or schedule.
+
 `FAULT` is used for automation anomalies: stale sensor data, plug command
 failure, unexpected energy/runtime, temperature outside configured bounds, or a
 curve that no longer resembles the learned profile. Faulting should not imply
@@ -104,6 +119,6 @@ runnable from tests and fixtures without Home Assistant installed.
 
 ## References
 
-- ADR-0001 through ADR-0007
+- ADR-0001 through ADR-0010
 - `docs/specs/fixture-analyzer-anchor.md`
 - `bdd/anchor/fixture-analyzer-anchor-bdd.md`

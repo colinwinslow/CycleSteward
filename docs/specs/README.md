@@ -8,6 +8,6 @@ at `bdd/<feature>/<slug>-bdd.md`.
 - `fixture-analyzer-anchor` - pure-core CSV-to-profile anchor artifact (draft)
 - `setup-flow` - Home Assistant setup and profile creation UX (draft)
 - `profile-calibration` - calibration and learned profile behavior (draft)
-- `session-control` - charge-to-target and just-in-time session control (draft)
+- `session-control` - charge-to-target, modes, and scheduling (draft)
 - `low-battery-rescue` - probe and rescue behavior for depleted displays (draft)
 - `guardrails` - automation guardrails and fault behavior (draft)

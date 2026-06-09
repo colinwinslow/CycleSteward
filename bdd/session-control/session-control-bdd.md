@@ -1,4 +1,4 @@
-# Session control: Charge to target and just-in-time scheduling - BDD
+# Session control: Charge to target and scheduling - BDD
 
 ## Status
 
@@ -11,37 +11,66 @@ stop at a learned target with a visible state transition.
 
 ## Scenarios
 
-### Scenario A - charge to learned active-Wh target and latch off
+### Scenario A - cut off when wattage first crosses the target threshold
 
-**Given** a calibrated profile with full active Wh and a daily target of 80% of
-the learned profile
-**When** a session starts from a known or estimated start position and integrated
-active Wh reaches the target
-**Then** CycleSteward turns the smart plug off and enters `DONE_LATCHED_OFF`
-without resuming until policy permits a new session
+**Given** a calibrated profile with a temperature-adjusted target wattage for 80%
+and "Charge to target" mode active, with the bike charging (not necessarily from
+empty)
+**When** measured wattage first rises across the target wattage
+**Then** CycleSteward turns the smart plug off on that first crossing and enters
+`DONE_LATCHED_OFF`, without a separate condition that could be false at the
+crossing instant, and without resuming until policy permits a new session
 
-### Scenario B - just-in-time schedule waits when battery is not low
+### Scenario B - bike rests at target, no departure timing needed
 
-**Given** the bike is plugged in before the configured charge window and the
-initial probe does not look very low
-**When** CycleSteward evaluates the schedule
-**Then** it turns or keeps the plug off until the just-in-time charging window
-opens
+**Given** a session has reached the target and latched off
+**When** time passes before the next ride
+**Then** the bike sits at the target wattage/SoC indefinitely and CycleSteward
+does not re-energize the plug to "top up just in time"
 
-### Scenario C - uncertain start position is surfaced
+### Scenario C - scheduled charging starts at the configured time
 
-**Given** the session start is inferred from initial wattage rather than an exact
-user SoC report
-**When** CycleSteward estimates the target stop point
-**Then** it exposes an uncertainty range or low-confidence flag with the estimate
+**Given** the bike is plugged in and "Charge to target" mode is on, with a
+configured scheduled start time
+**When** the current time is before that start time
+**Then** CycleSteward keeps the plug off until the configured start time, then
+begins charging
 
-### Scenario D - temperature gate delays charging
+### Scenario D - modes are off by default and reset each morning
 
-**Given** an optional temperature provider reports a value outside the configured
-charging range
+**Given** the user did not set a mode (or a mode was left on overnight)
+**When** the configured morning reset time passes
+**Then** both modes are off, so no charging occurs until the user opts in again
+(forgetting to set a mode results in no charge)
+
+### Scenario E - manual override still honors the cutoff
+
+**Given** the user manually overrides the plug on while "Charge to target" is active
+**When** measured wattage crosses the target wattage
+**Then** CycleSteward still applies the cutoff and turns the plug off, because the
+cutoff watches wattage regardless of how the plug was energized
+
+### Scenario F - "Charge to full" stop is best-effort
+
+**Given** "Charge to full" mode is active and the OEM charger has entered CV taper
+**When** measured wattage stays below the taper floor for the configured duration
+**Then** CycleSteward de-energizes the idle plug; this is best-effort cleanup and
+does not claim to prevent overcharge (the BMS is the terminator)
+
+### Scenario G - uncertain SoC estimate is surfaced
+
+**Given** SoC is estimated from instantaneous wattage with coarse or low-confidence
+calibration
+**When** CycleSteward reports the estimate
+**Then** it exposes an uncertainty range or low-confidence flag with the value
+
+### Scenario H - temperature gate prevents starting
+
+**Given** an optional temperature provider reports below the freeze threshold or
+above the heat-delay threshold
 **When** a scheduled charge would otherwise begin
-**Then** CycleSteward does not start charging and records the temperature guardrail
-as the reason
+**Then** CycleSteward does not start charging and records the temperature reason
+(freeze lockout faults/holds; heat enters a delay-and-retry state per ADR-0008)
 
 ## Evidence
 

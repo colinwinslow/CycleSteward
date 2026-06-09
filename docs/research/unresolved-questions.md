@@ -17,6 +17,12 @@ The seed ADRs intentionally lock the basic architecture, but several product and
 algorithm details should remain open until fixtures and implementation evidence
 exist.
 
+Note: some items below are now decided and only their *default values* remain
+open. The estimation method is settled (ADR-0002, wattage anchors); temperature
+policy is settled (ADR-0008); charge modes, scheduling, and safe defaults are
+settled (ADR-0009). Where a bullet below is covered by one of those, treat it as
+"tune the defaults," not "decide the approach."
+
 ## Notes
 
 ### Calibration and estimation

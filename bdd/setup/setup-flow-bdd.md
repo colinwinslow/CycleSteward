@@ -11,13 +11,14 @@ optional temperature provider, and SoC reporting coarseness.
 
 ## Scenarios
 
-### Scenario A - user creates a profile for a metered smart plug
+### Scenario A - user creates a profile for a dedicated metering smart plug
 
 **Given** Home Assistant has a controllable switch entity and a wattage sensor
-entity for a smart plug
+entity that belong to the same dedicated smart plug powering only the charger
 **When** the user configures CycleSteward with those entities and a profile name
 **Then** CycleSteward stores a new uncalibrated profile scoped to that switch,
-power sensor, charger label, and battery label
+power sensor, charger label, and battery label, with no shared-circuit baseline
+option offered
 
 ### Scenario B - user records a 0-5 dot SoC display
 
@@ -29,9 +30,31 @@ not exact percentages
 ### Scenario C - optional temperature provider is configured
 
 **Given** a temperature sensor is available
-**When** the user selects it during setup
-**Then** CycleSteward stores it as a guardrail input without requiring it for core
-profile learning
+**When** the user selects it during setup and sets the sensor-location offset,
+compensation coefficient/baseline, and freeze/heat thresholds
+**Then** CycleSteward stores it as a guardrail and compensation input without
+requiring it for core profile learning
+
+### Scenario C2 - no temperature provider disables temperature behavior
+
+**Given** the user configures a profile without selecting a temperature sensor
+**When** setup completes
+**Then** CycleSteward records that temperature compensation and gating are disabled,
+and charging proceeds uncompensated and ungated
+
+### Scenario C3 - rated battery capacity is captured for overhead estimation
+
+**Given** the user knows the battery's rated capacity in Wh
+**When** they enter it during setup
+**Then** CycleSteward stores the rated capacity so a later full session can derive
+the charger/battery overhead estimate
+
+### Scenario C4 - low-battery probe/rescue is off by default
+
+**Given** the user completes setup without enabling low-battery probe/rescue
+**When** the profile is stored
+**Then** the probe/rescue feature is disabled, so CycleSteward will not energize
+the plug to probe until the user opts in
 
 ### Scenario D - invalid entity selection blocks setup
 
