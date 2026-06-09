@@ -1,12 +1,13 @@
 # STATUS.md
 
-**Last updated:** 2026-06-09 (profile-calibration slice F-H implemented and verified)
+**Last updated:** 2026-06-09 (session-control slice A–H implemented and verified)
 **Phase:** Phase 1 - pure core
-**Next bounded packet:** Profile-calibration slice I (or next slice TBD): runtime SoC estimator that uses the wattage anchors + `target_wattage()` to emit an estimated charge percentage from a live power reading; session-control state machine (start/stop/cutoff); or guardrails slice depending on priority. Review `docs/specs/` and agree the next packet before coding.
+**Next bounded packet:** Guardrails slice (A–G): max-runtime fault, max-active-Wh fault, relay chatter prevention, switch-command failure, freeze lockout, heat delay, unknown/unavailable readings — plug these into the session-control state machine as a separate evaluator that fires before/alongside the cutoff logic. Review `docs/specs/guardrails.md` and `bdd/guardrails/guardrails-bdd.md` before coding.
 **Current readiness:** READY-FOR-NEXT-PACKET
 
 ## Recent sessions (rolling, last 5)
 
+- **2026-06-09** - Session-control slice A–H - Pure state machine (`src/cyclesteward/session_control.py`): `ChargeMode`, `SessionState`, `SessionAction`, `SocEstimate`, `TickResult`, `TemperatureConfig`, `SessionConfig`, `SessionController`. Implements wattage-threshold cutoff (first crossing, no double-gate), DONE_LATCHED_OFF, off-by-default modes, morning reset, scheduled start, manual override (still honors cutoff), charge-to-full taper-floor detection, SoC estimation from CC wattage (calibrated: ±10 %, uncalibrated: ±20 % + low_confidence), temperature compensation (linear coeff), freeze lockout (hard stop) and heat delay (non-fault, with deadline). 31 new tests (96 total), ruff clean. Anchor artifact: `bdd/session-control/session-control-trace.json`. BDD A–H evidence written; architecture review OK; BDD review OK.
 - **2026-06-09** - Profile-calibration slice F-H - Inrush settling (F2): `detect()` now scans forward from onset to the first stable consecutive pair so `watts_at_low` reflects the settled CC wattage, fixing the 65.7→69.7 W Swoop artifact. Relay-cutoff detection (G3): `taper_floor_w` is set to None with a `TAPER_AMBIGUOUS` warning when the apparent floor is >35% of peak active, also fixing the Swoop artifact. Opportunistic classification (F/G/G2/G3): `classify_opportunistic_session()` promotes a near-anchor completed session and stores `(temperature_c, active_wh)` in `temperature_observations` for ADR-0008 fitting; rejects on CALIBRATION_DISTRUST, TAPER_AMBIGUOUS, or proximity failure. HA-history import (H): demonstrated via real-swoop-asm-charge.csv (actual HA export) with no homeassistant import. 16 new tests (65 total), 2 new fixtures, ruff clean. BDD F/F2/G/G2/G3/H evidence written; architecture review OK; review-bdd-evidence verdict OK.
 - **2026-06-09** - Profile-calibration slice A-E - Added `CalibrationProfile` model (`src/cyclesteward/calibration.py`): full-session ingest stores wattage anchors + taper floor + active Wh; `target_wattage()` linearly interpolates the 80% cutoff wattage along the CC ramp; `SocReport` stores dot-count inputs as coarse intervals (not exact %) per invariant #6; partial sessions record without overwriting the full-Wh denominator; bad-data sessions (CALIBRATION_DISTRUST) are stored but not promoted to trusted; rated-capacity → overhead ratio with `confidence: low`. 21 new tests (49 total), ruff clean. BDD A-E evidence written; review-bdd-evidence verdict OK (one prose fix applied).
 - **2026-06-08** - Fixture analyzer anchor slice - Built the pure core (`src/cyclesteward/`: samples/energy/landmarks/profile/cli) turning a charge-session CSV (or exported HA history) into a deterministic profile-summary JSON with the wattage anchors + active Wh + landmarks. 28 tests pass, ruff clean. Grew the fixture library (clean/noisy/interrupted/malformed/unknown) and added a real Swoop ASM session; integrated active Wh matched the plug's energy meter to ~1%. BDD A-D evidence written; review-bdd-evidence verdict OK.
@@ -14,6 +15,19 @@
 - **2026-06-08** - Design reconciliation - Folded the prior e-bike chat design into the docs: reframed ADR-0002 to wattage-anchor SoC estimation (active Wh demoted to calibration/guardrail), required a dedicated metering plug in ADR-0001, added ADR-0008 (temperature policy) and ADR-0009 (modes/scheduling/safe defaults), updated CLAUDE.md invariant #4, expanded the calibration/session-control/guardrails/setup specs + BDDs, and added the HA-adapter-lessons research note.
 
 ## Active work
+
+### Session-control slice A–H (DONE 2026-06-09)
+
+- [x] Pure state machine: `ChargeMode`, `SessionState`, `SessionAction`, `SocEstimate`, `TickResult`.
+- [x] Wattage-threshold cutoff on first crossing; no double-gate; DONE_LATCHED_OFF latch.
+- [x] Off-by-default modes; morning reset (once per day); mutually exclusive modes.
+- [x] Scheduled start (WAITING_FOR_SCHEDULE → CHARGING at or after start time).
+- [x] Manual override → CHARGING while cutoff still applies.
+- [x] Charge-to-full taper-floor detection with configurable duration and timer reset.
+- [x] SoC estimation from CC wattage: `uncertainty_pct`, `low_confidence`, transition note.
+- [x] Temperature compensation (linear shift), freeze lockout (hard stop), heat delay (non-fault).
+- [x] Missing/non-numeric readings hold safely with no cutoff misfire.
+- [x] 31 tests, anchor artifact (`session-control-trace.json`), BDD A–H evidence, architecture + BDD review OK.
 
 ### Profile-calibration slice F-H (DONE 2026-06-09)
 

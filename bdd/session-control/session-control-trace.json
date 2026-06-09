@@ -1,0 +1,94 @@
+{
+  "scenario": "charge-to-target: IDLE \u2192 CHARGING \u2192 DONE_LATCHED_OFF",
+  "profile": {
+    "watts_at_low": 70.0,
+    "watts_at_transition": 100.0,
+    "assumed_soc_at_low_pct": 0.0,
+    "assumed_soc_at_transition_pct": 80.0,
+    "target_soc_pct": 50.0,
+    "target_wattage_w": 88.75
+  },
+  "events": [
+    {
+      "timestamp": "2026-01-10T04:00:00+00:00",
+      "power_w": 70.0,
+      "action": "turn_on",
+      "state": "charging",
+      "soc_estimate": null,
+      "reason": "starting charge"
+    },
+    {
+      "timestamp": "2026-01-10T04:05:00+00:00",
+      "power_w": 75.0,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 13.3,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      },
+      "reason": "charging"
+    },
+    {
+      "timestamp": "2026-01-10T04:10:00+00:00",
+      "power_w": 80.0,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 26.7,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      },
+      "reason": "charging"
+    },
+    {
+      "timestamp": "2026-01-10T04:15:00+00:00",
+      "power_w": 85.0,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 40.0,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      },
+      "reason": "charging"
+    },
+    {
+      "timestamp": "2026-01-10T04:20:00+00:00",
+      "power_w": 88.0,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 48.0,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      },
+      "reason": "charging"
+    },
+    {
+      "timestamp": "2026-01-10T04:25:00+00:00",
+      "power_w": 89.0,
+      "action": "turn_off",
+      "state": "done_latched_off",
+      "soc_estimate": {
+        "estimated_soc_pct": 50.7,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      },
+      "reason": "wattage 89.0 W >= target 88.8 W; cutoff"
+    },
+    {
+      "timestamp": "2026-01-10T05:00:00+00:00",
+      "power_w": 40.0,
+      "action": "none",
+      "state": "done_latched_off",
+      "soc_estimate": null,
+      "reason": "latched off; awaiting new session"
+    }
+  ]
+}
