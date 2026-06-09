@@ -60,30 +60,65 @@ as an estimate with uncertainty, not as exact truth
 
 ### Scenario F - a naturally-occurring near-empty-to-full session is reused
 
-**Given** a calibrated profile and a later session that starts near the learned low
-anchor and runs to completion, with a temperature reading
+**Given** a calibrated profile with a known `watts_at_low` anchor and a later
+completed session whose starting wattage falls within a conservative proximity
+tolerance of that anchor (e.g. within 10% of `watts_at_low`), and a temperature
+reading is available for the session
 **When** CycleSteward classifies the completed session
-**Then** it promotes the session to an opportunistic full-span datapoint and
-updates the temperature/full-Wh relationship, without prompting the user
+**Then** it promotes the session to an opportunistic full-span datapoint; stores
+the `(temperature_c, active_wh)` pair alongside the existing calibration data for
+later temperature/full-Wh compensation fitting; and does not prompt the user
 
-### Scenario G - a partial session is not mistaken for a full-span datapoint
+### Scenario F2 - inrush settling yields a representative watts_at_low
 
-**Given** a later session that does not clearly start near the low anchor or does
-not reach completion
+**Given** a charge session whose first samples show a brief inrush spike — wattage
+momentarily above the steady CC phase — before settling to a stable bulk-charge
+wattage
+**When** CycleSteward extracts `watts_at_low`
+**Then** it uses the settled CC wattage (after the inrush period, not the spike),
+so the anchor reflects the wattage the charger sustains at the known SoC anchor
+point rather than an artefact of startup transient
+
+### Scenario G - a session that starts too far from the low anchor is rejected
+
+**Given** a calibrated profile and a later completed session whose starting
+wattage is substantially above the learned `watts_at_low` anchor (i.e. it clearly
+did not start near display-empty)
 **When** CycleSteward classifies it
-**Then** it is not promoted to a full-span datapoint and the full calibration is
-unchanged
+**Then** it is not promoted to a full-span datapoint, the `active_full_wh`
+denominator is unchanged, and the profile records why it was skipped
+
+### Scenario G2 - an incomplete session is not promoted even if it starts near the anchor
+
+**Given** a calibrated profile and a later session that starts near `watts_at_low`
+but ends before reaching the taper/completion region (interrupted, or relay cut
+off mid-CC)
+**When** CycleSteward classifies it
+**Then** it is not promoted to a full-span datapoint; the profile records the
+rejection reason (no completion detected)
+
+### Scenario G3 - a sharp mid-taper relay cutoff is not mistaken for a natural taper floor
+
+**Given** a session whose power drops sharply to zero while still mid-taper (a
+relay cutoff artefact rather than a natural CV settling to near-idle)
+**When** CycleSteward analyses the completion region
+**Then** `taper_floor_w` is not assigned from the cutoff artefact; the profile
+records a warning that completion is ambiguous; and the session is not promoted as
+a trusted full-span datapoint
 
 ### Scenario H - calibration runs on imported Home Assistant history
 
-**Given** Home Assistant power (and optional temperature) history exported into the
-plain sample format
+**Given** Home Assistant power (and optional temperature) history exported into
+the plain sample format (same row shape as synthetic fixtures: timestamp,
+power_w, and optionally temperature_c), with gaps and `unknown`/`unavailable`
+rows tolerated
 **When** the pure core ingests those rows for calibration
-**Then** it produces the same kind of profile output as a synthetic fixture,
-without importing Home Assistant
+**Then** it produces the same kind of profile output as a synthetic fixture —
+wattage anchors, taper floor, active Wh, and any quality flags — without
+importing Home Assistant
 
 ## Evidence
 
-The implementing slice produces an evidence file at
-`bdd/calibration/profile-calibration-evidence.md` containing raw outputs (not
-summaries) for each scenario.
+The implementing slice appends a new section to
+`bdd/calibration/profile-calibration-evidence.md` covering scenarios F, F2, G,
+G2, G3, and H with raw outputs (not summaries) for each scenario.
