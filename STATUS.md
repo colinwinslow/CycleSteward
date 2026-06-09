@@ -1,8 +1,8 @@
 # STATUS.md
 
-**Last updated:** 2026-06-09 (guardrails slice A–G implemented and verified)
-**Phase:** Phase 1 - pure core
-**Next bounded packet:** TBD — guardrails slice complete; next packet likely Home Assistant plumbing or tuning default guardrail/temperature threshold values (open queue items b/e).
+**Last updated:** 2026-06-09 (ADR-0011: HA entity/service surface decided)
+**Phase:** Phase 1 - pure core (transitioning to HA adapter)
+**Next bounded packet:** ADR-0012 — finish-time scheduling mechanism (probe cadence, duration estimation, margin policy, dynamic start-time derivation); blocked on this before HA adapter slice can begin.
 **Current readiness:** READY-FOR-NEXT-PACKET
 
 ## Recent sessions (rolling, last 5)
@@ -72,7 +72,8 @@
 
 - (a) Decide the Home Assistant domain slug (name resolved: CycleSteward; `docs/research/naming.md`).
 - (b) Tune default values for the temperature thresholds/coefficient (ADR-0008) and the morning-reset/scheduled-start times (ADR-0009).
-- (f) Decide the remaining Home Assistant entity/service surface after the core model is proven.
+- (f) ~~Decide the remaining Home Assistant entity/service surface after the core model is proven.~~ DONE — ADR-0011 accepted 2026-06-09.
+- (g) ADR-0012: Finish-time scheduling mechanism — probe-to-estimate cadence, full-charge-duration estimation from profile, margin policy, dynamic start-time derivation, WAITING_FOR_SCHEDULE interaction. Blocks HA adapter slice.
 - (c) Research how often users should be prompted for full calibration/balancing charges.
 - (d) Decide default probe cadence and relay-cycle limits for low-battery detection.
 - (e) Grow the charge-session fixture library further (seeded: clean/noisy/interrupted/malformed/unknown synthetics + one real Swoop ASM session; want more real sessions at varied temperatures and a full taper-to-completion session).
