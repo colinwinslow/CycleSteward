@@ -9,6 +9,8 @@ build/
 dist/
 .pytest_cache/
 .ruff_cache/
+.venv/
+venv/
 
 # Claude Code local (per-user, not shared)
 .claude/settings.local.json
