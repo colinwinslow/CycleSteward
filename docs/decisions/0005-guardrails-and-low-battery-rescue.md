@@ -62,3 +62,8 @@ CycleSteward never energizes the plug to probe.
 
 - ADR-0001: Smart plug wrapper
 - ADR-0007: Calibration lifecycle and full-charge maintenance
+- ADR-0012: Finish-time scheduling and probe transparency — the rescue probe
+  implementation must honor the transparency requirement defined there: set
+  `session_reason` on the `session_state` entity and fire a logbook event before
+  energizing the charger. This is an HA adapter concern; the core probe logic
+  does not change.

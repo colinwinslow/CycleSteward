@@ -23,3 +23,4 @@ One file per decision: `NNNN-<slug>.md`, zero-padded, monotonic. Scaffold with
 - 0009 - Charge modes, scheduling, and safe defaults
 - 0010 - Calibrating the pure core on Home Assistant history
 - 0011 - Home Assistant entity and service surface
+- 0012 - Finish-time scheduling and probe transparency (draft — algorithm questions open)
