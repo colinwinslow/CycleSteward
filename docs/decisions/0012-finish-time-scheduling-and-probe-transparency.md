@@ -1,7 +1,7 @@
 ---
 id: 0012
 title: Finish-time scheduling and probe transparency
-status: draft
+status: accepted
 date: 2026-06-09
 supersedes: []
 superseded-by: null
@@ -24,9 +24,9 @@ creates a transparency problem: the user may see the charger switch on unexpecte
 and have no immediate explanation. This applies to both the scheduling probe
 introduced here and the rescue probe described in ADR-0005.
 
-This ADR records the decided transparency requirement, adds four open algorithm
-questions that must be resolved before the HA adapter slice can begin, and flags
-the UI surface work needed.
+This ADR records the decided transparency requirement, resolves four algorithm
+questions required before the HA adapter slice can begin, and flags the UI
+surface work needed.
 
 ## Decisions
 
@@ -53,53 +53,74 @@ integration, including the rescue probe in ADR-0005 and the scheduling probe
 introduced by this ADR. Neither probe implementation may energize the charger
 silently.
 
-### Open: finish-time scheduling algorithm
+### Decided: full-charge-duration estimation from profile (A)
 
-The following design questions must be answered in a future session before the
-HA adapter scheduling slice begins. They are captured here so the ADR is the
-single source of record for what is unresolved.
+`CalibrationProfile.ingest_full_session` gains an `elapsed_seconds` parameter
+and stores observed session durations alongside `active_wh`. The profile exposes
+an `estimated_duration_s()` method that returns the mean observed elapsed time
+(or a configurable pessimistic default when no observations exist, e.g. 4 h).
+Uncertainty is expressed as `±stddev` across observations (or a fixed ±20 % of
+mean when fewer than three observations are available). The duration estimate
+feeds directly into the margin calculation (see C below). Wattage-curve
+integration is deferred as a future optimization; the empirical elapsed-time
+approach is sufficient for the adapter slice.
 
-**Open A — Full-charge-duration estimation from profile.**
-To derive a charge start time from a target finish time, the integration needs
-to estimate how long a charge from the current SoC to the target SoC will take.
-The calibration profile stores observed session Wh and wattage anchors, but
-duration estimation from those is not currently implemented in the core. Questions:
-- Should duration be estimated directly from observed per-session elapsed times
-  (stored in the profile alongside Wh), from a wattage-curve integral, or from
-  both with a cross-check?
-- How is duration uncertainty represented and propagated into the start-time
-  margin?
+### Decided: pre-charge SoC probe cadence and mechanism (B)
 
-**Open B — Pre-charge SoC probe cadence and mechanism.**
-The intended scheduling mechanism is: some time before the target finish, run a
-brief charge (≈5 min) to read the CC-phase wattage and estimate current SoC, then
-derive the start time. Questions:
-- How long before `target_finish_time` should the scheduling probe run? (Must be
-  long enough that the derived start time is still in the future even if SoC is
-  near zero.)
-- What happens if the probe fails to produce a usable wattage reading (e.g. meter
-  stale, wattage noisy)? Fall back to a pessimistic start time? Notify the user?
-- The rescue probe (ADR-0005) is a separate opt-in feature. Should the scheduling
-  probe share the same probe infrastructure (same bounded energization + guardrail
-  path) or be implemented separately? Sharing avoids duplicate relay logic;
-  separating keeps rescue and scheduling independent.
+The scheduling probe fires once per charge cycle at:
 
-**Open C — Margin policy.**
-The ADR-0011 discussion referenced "~1 hour of margin." Questions:
-- Is the margin a fixed project constant, a user-configurable value (exposed in
-  the config entry), or derived from profile uncertainty?
-- What happens if the charge runs long past `target_finish_time` despite the
-  margin — is this a guardrail fault, a notification, or silently tolerated?
+```
+probe_time = target_finish_time − estimated_max_duration − margin − probe_headroom
+```
 
-**Open D — Dynamic start time and `WAITING_FOR_SCHEDULE`.**
-The current `SessionConfig` in the core holds a fixed `scheduled_start` datetime.
-With derived start times, the start time changes as time passes (probe result
-refines the estimate). Questions:
-- Does `SessionController` need a new tick input for "computed start time" that
-  the adapter updates after each probe, or should the adapter simply update the
-  config's `scheduled_start` field before the window opens?
-- How does `WAITING_FOR_SCHEDULE` behave when no probe has run yet (start time
-  unknown)? Hold until a probe runs? Use a conservative early start?
+where `estimated_max_duration` is `mean + 2×stddev` from profile observations,
+falling back to the 4 h pessimistic default before the profile has data, and
+`probe_headroom` is a small fixed buffer (default 10 min) for probe execution
+and processing.
+
+If the probe fails to produce a usable wattage reading (stale meter, noisy
+signal, or no CC-phase detected), the system falls back to the pessimistic start
+time (`target_finish_time − max_profile_duration − margin`) and fires a logbook
+event describing the failure. No silent retry.
+
+The scheduling probe **shares probe infrastructure with the rescue probe
+(ADR-0005)**. Both are bounded energizations that require the same guardrail
+path, `session_reason` attribute, and logbook-event transparency. A `PROBING`
+session state is added to `SessionController` to represent an active probe
+regardless of probe type. Duplicating relay logic for a cosmetic separation is
+rejected.
+
+### Decided: margin policy (C)
+
+The scheduling margin is a **fixed default of 30 minutes**, exposed as a
+user-configurable value in the HA config entry. Profile-derived margin (computed
+from duration stddev once sufficient observations exist) is deferred to a future
+enhancement.
+
+If a charge session runs past `target_finish_time` despite the margin, the
+integration fires a logbook event describing the overrun. This is **not** a
+guardrail fault — modest overruns are expected behavior, and the max-runtime
+guardrail (ADR-0005 slice A) already provides the hard cap against runaway
+charges.
+
+### Decided: dynamic start time and `WAITING_FOR_SCHEDULE` (D)
+
+`SessionController.tick()` gains a new optional parameter `computed_start_time:
+Optional[datetime]`. The controller uses this value when in `WAITING_FOR_SCHEDULE`
+to check `now >= computed_start_time`; it is stateless about how the start time
+was derived. The adapter owns the derivation and updates `computed_start_time`
+after each probe.
+
+Before any probe has run, `computed_start_time` defaults to:
+
+```
+target_finish_time − max_profile_duration − margin
+```
+
+This is the conservative worst-case start. As the probe refines the SoC
+estimate, the adapter passes an updated (later) `computed_start_time` on
+subsequent ticks. The controller sees the value move forward without caring
+why.
 
 ## Rationale
 
