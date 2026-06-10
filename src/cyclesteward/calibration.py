@@ -73,6 +73,15 @@ class SocReport:
             "coarse": self.coarse,
         }
 
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> SocReport:
+        return cls(
+            label=d["label"],
+            interval_low_pct=d.get("interval_low_pct"),
+            interval_high_pct=d.get("interval_high_pct"),
+            coarse=d.get("coarse", True),
+        )
+
 
 @dataclass
 class SocAssumptions:
@@ -91,6 +100,13 @@ class SocAssumptions:
             "note": "assumed; not measured BMS values",
         }
 
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> SocAssumptions:
+        return cls(
+            soc_at_low_pct=d.get("soc_at_low_pct", 0.0),
+            soc_at_transition_pct=d.get("soc_at_transition_pct", 80.0),
+        )
+
 
 @dataclass
 class WattageAnchor:
@@ -106,6 +122,14 @@ class WattageAnchor:
             "assumed_soc_label": self.assumed_soc_label,
             "confidence": self.confidence,
         }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> WattageAnchor:
+        return cls(
+            watts=d["watts"],
+            assumed_soc_label=d["assumed_soc_label"],
+            confidence=d.get("confidence", "high"),
+        )
 
 
 @dataclass
@@ -129,6 +153,15 @@ class OverheadEstimate:
             "confidence": self.confidence,
             "note": "nominal rated capacity; derived overhead carries uncertainty",
         }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> OverheadEstimate:
+        return cls(
+            ratio=d["ratio"],
+            rated_capacity_wh=d["rated_capacity_wh"],
+            measured_full_wh=d["measured_full_wh"],
+            confidence=d.get("confidence", "low"),
+        )
 
 
 @dataclass
@@ -160,6 +193,18 @@ class FullObservation:
             "quality_flags": list(self.quality_flags),
         }
 
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> FullObservation:
+        return cls(
+            timestamp=datetime.fromisoformat(d["timestamp"]),
+            active_wh=d["active_wh"],
+            watts_at_low=d.get("watts_at_low"),
+            watts_at_transition=d.get("watts_at_transition"),
+            trusted=d.get("trusted", True),
+            soc_at_start=SocReport.from_dict(d["soc_at_start"]) if d.get("soc_at_start") else None,
+            quality_flags=d.get("quality_flags", []),
+        )
+
 
 @dataclass
 class PartialObservation:
@@ -175,6 +220,14 @@ class PartialObservation:
             "active_wh": round(self.active_wh, _WH_DP),
             "soc_at_start": self.soc_at_start.to_dict() if self.soc_at_start else None,
         }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> PartialObservation:
+        return cls(
+            timestamp=datetime.fromisoformat(d["timestamp"]),
+            active_wh=d["active_wh"],
+            soc_at_start=SocReport.from_dict(d["soc_at_start"]) if d.get("soc_at_start") else None,
+        )
 
 
 @dataclass
@@ -195,6 +248,15 @@ class TemperatureObservation:
             ),
             "temperature_c": self.temperature_c,
         }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> TemperatureObservation:
+        return cls(
+            timestamp=datetime.fromisoformat(d["timestamp"]),
+            active_wh=d["active_wh"],
+            watts_at_low=d.get("watts_at_low"),
+            temperature_c=d.get("temperature_c"),
+        )
 
 
 @dataclass
@@ -424,3 +486,47 @@ class CalibrationProfile:
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), indent=2) + "\n"
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> CalibrationProfile:
+        profile = cls(
+            charger_label=d["charger_label"],
+            battery_label=d["battery_label"],
+            meter_id=d["meter_id"],
+            rated_capacity_wh=d.get("rated_capacity_wh"),
+        )
+        profile.state = ProfileState(d.get("state", ProfileState.UNCALIBRATED.value))
+        profile.idle_power_w = d.get("idle_power_w")
+        profile.watts_at_low = (
+            WattageAnchor.from_dict(d["watts_at_low"]) if d.get("watts_at_low") else None
+        )
+        profile.watts_at_transition = (
+            WattageAnchor.from_dict(d["watts_at_transition"])
+            if d.get("watts_at_transition")
+            else None
+        )
+        profile.taper_floor_w = d.get("taper_floor_w")
+        profile.active_full_wh = d.get("active_full_wh")
+        profile.overhead = (
+            OverheadEstimate.from_dict(d["overhead"]) if d.get("overhead") else None
+        )
+        profile.assumptions = (
+            SocAssumptions.from_dict(d["assumptions"]) if d.get("assumptions") else None
+        )
+        profile.full_observations = [
+            FullObservation.from_dict(o) for o in d.get("full_observations", [])
+        ]
+        profile.partial_observations = [
+            PartialObservation.from_dict(o) for o in d.get("partial_observations", [])
+        ]
+        profile.temperature_observations = [
+            TemperatureObservation.from_dict(o) for o in d.get("temperature_observations", [])
+        ]
+        profile.soc_reports = [SocReport.from_dict(r) for r in d.get("soc_reports", [])]
+        profile.warnings = list(d.get("warnings", []))
+        profile.schema_version = d.get("schema_version", SCHEMA_VERSION)
+        return profile
+
+    @classmethod
+    def from_json(cls, json_str: str) -> CalibrationProfile:
+        return cls.from_dict(json.loads(json_str))

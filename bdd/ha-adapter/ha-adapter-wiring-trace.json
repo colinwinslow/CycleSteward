@@ -1,0 +1,63 @@
+{
+  "slice": "ha-adapter-wiring",
+  "profile_loaded": {
+    "watts_at_transition": 125.5,
+    "state": "calibrated",
+    "loaded_from_store": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "event": "power_state_change",
+      "entity": "sensor.plug_power",
+      "value": 80.0,
+      "plug_is_on_read_from_hass": false,
+      "session_state": "charging",
+      "tick_action": "turn_on",
+      "service_call": {
+        "domain": "homeassistant",
+        "service": "turn_on",
+        "data": {
+          "entity_id": "switch.plug"
+        }
+      },
+      "trace_buffer_len": 1
+    },
+    {
+      "step": 2,
+      "event": "temp_state_change",
+      "entity": "sensor.battery_temp",
+      "value": 22.5,
+      "cached_temp_c": 22.5,
+      "tick_triggered": false
+    },
+    {
+      "step": 3,
+      "event": "power_state_change",
+      "entity": "sensor.plug_power",
+      "value": 90.0,
+      "temp_c_applied": 22.5,
+      "session_state": "charging",
+      "tick_action": "none",
+      "service_call_fired": false,
+      "trace_buffer": [
+        [
+          "2026-01-01T01:00:00+00:00",
+          80.0
+        ],
+        [
+          "2026-01-01T01:00:30+00:00",
+          90.0
+        ]
+      ]
+    },
+    {
+      "step": 4,
+      "event": "power_above_target_wattage",
+      "value": 126.0,
+      "session_state": "done_latched_off",
+      "trace_buffer_len": 3,
+      "trace_buffer_retained_through_done_latched_off": true
+    }
+  ]
+}
