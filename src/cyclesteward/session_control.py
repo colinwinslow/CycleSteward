@@ -151,6 +151,22 @@ class SessionController:
     def state(self) -> SessionState:
         return self._state
 
+    @property
+    def active_wh(self) -> float:
+        return self._guardrails.active_wh
+
+    @property
+    def relay_cycle_count(self) -> int:
+        return self._guardrails.relay_cycle_count
+
+    @property
+    def session_start(self) -> Optional[datetime]:
+        return self._guardrails.session_start
+
+    @property
+    def target_wattage(self) -> Optional[float]:
+        return self._profile.target_wattage(self._config.target_soc_pct)
+
     def set_mode(self, mode: ChargeMode) -> None:
         """Set charge mode.  Modes are mutually exclusive; setting one clears the other.
 

@@ -1,0 +1,86 @@
+set_mode:
+  name: Set charge mode
+  description: >
+    Set the charge mode for a CycleSteward entry.  Same write path as the
+    charge_mode select entity; suitable for automations.
+  fields:
+    entry_id:
+      name: Config entry ID
+      description: The config entry to target.
+      required: true
+      selector:
+        text:
+    mode:
+      name: Mode
+      description: "off / charge_to_target / charge_to_full"
+      required: true
+      selector:
+        select:
+          options:
+            - "off"
+            - "charge_to_target"
+            - "charge_to_full"
+
+manual_override:
+  name: Manual override
+  description: >
+    Enable or disable manual override.  Same write path as the manual_override
+    switch; suitable for automations.
+  fields:
+    entry_id:
+      name: Config entry ID
+      required: true
+      selector:
+        text:
+    enabled:
+      name: Enabled
+      required: true
+      selector:
+        boolean:
+
+start_calibration_session:
+  name: Start calibration session
+  description: >
+    Start a guided full calibration charge.  Errors if a session is already
+    active.
+  fields:
+    entry_id:
+      name: Config entry ID
+      required: true
+      selector:
+        text:
+    soc_report:
+      name: SoC report
+      description: Optional coarse SoC at charge start (e.g. "0 of 5 dots").
+      required: false
+      selector:
+        text:
+
+import_history:
+  name: Import history CSV
+  description: >
+    Import a Home Assistant history CSV for calibration (ADR-0010).  Blocked
+    while a session is active.
+  fields:
+    entry_id:
+      name: Config entry ID
+      required: true
+      selector:
+        text:
+    csv_path:
+      name: CSV path
+      required: true
+      selector:
+        text:
+
+acknowledge_fault:
+  name: Acknowledge fault
+  description: >
+    Clear a non-fatal fault and return to OFF_IDLE.  Same action as the
+    acknowledge_fault button; suitable for automations.
+  fields:
+    entry_id:
+      name: Config entry ID
+      required: true
+      selector:
+        text:

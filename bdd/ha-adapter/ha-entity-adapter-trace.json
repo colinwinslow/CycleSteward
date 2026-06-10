@@ -1,0 +1,43 @@
+[
+  {
+    "step": "initial",
+    "charge_mode": "off",
+    "session_state": "idle"
+  },
+  {
+    "step": "after set_mode(CHARGE_TO_TARGET)",
+    "charge_mode": "charge_to_target",
+    "session_state": "idle"
+  },
+  {
+    "step": "tick 1 \u2014 turn on",
+    "charge_mode": "charge_to_target",
+    "session_state": "charging",
+    "action": "turn_on",
+    "reason": "starting charge"
+  },
+  {
+    "step": "tick 2 \u2014 charging (78 W)",
+    "charge_mode": "charge_to_target",
+    "session_state": "charging",
+    "action": "none",
+    "reason": "charging",
+    "soc_estimate": {
+      "estimated_soc_pct": 34.7,
+      "uncertainty_pct": 10.0,
+      "low_confidence": false
+    }
+  },
+  {
+    "step": "tick 3 \u2014 cutoff (96 W)",
+    "charge_mode": "charge_to_target",
+    "session_state": "done_latched_off",
+    "action": "turn_off",
+    "reason": "wattage 96.0 W >= target 95.0 W; cutoff",
+    "soc_estimate": {
+      "estimated_soc_pct": 80.0,
+      "uncertainty_pct": 15.0,
+      "low_confidence": true
+    }
+  }
+]

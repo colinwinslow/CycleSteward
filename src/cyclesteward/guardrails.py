@@ -77,6 +77,14 @@ class GuardrailEvaluator:
     def active_wh(self) -> float:
         return self._active_wh
 
+    @property
+    def relay_cycle_count(self) -> int:
+        return len(self._relay_transitions)
+
+    @property
+    def session_start(self) -> Optional[datetime]:
+        return self._session_start
+
     def reset(self) -> None:
         """Reset all per-session state."""
         self._session_start = None

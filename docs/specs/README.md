@@ -11,3 +11,4 @@ at `bdd/<feature>/<slug>-bdd.md`.
 - `session-control` - charge-to-target, modes, and scheduling (draft)
 - `low-battery-rescue` - probe and rescue behavior for depleted displays (draft)
 - `guardrails` - automation guardrails and fault behavior (draft)
+- `ha-entity-adapter` - HA coordinator + primary entity surface, first adapter slice (active)
