@@ -176,6 +176,8 @@ class FullObservation:
     soc_at_start: Optional[SocReport] = None
     quality_flags: List[str] = field(default_factory=list)
 
+    elapsed_seconds: Optional[float] = None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "timestamp": self.timestamp.isoformat(),
@@ -191,6 +193,7 @@ class FullObservation:
             "trusted": self.trusted,
             "soc_at_start": self.soc_at_start.to_dict() if self.soc_at_start else None,
             "quality_flags": list(self.quality_flags),
+            "elapsed_seconds": self.elapsed_seconds,
         }
 
     @classmethod
@@ -203,6 +206,7 @@ class FullObservation:
             trusted=d.get("trusted", True),
             soc_at_start=SocReport.from_dict(d["soc_at_start"]) if d.get("soc_at_start") else None,
             quality_flags=d.get("quality_flags", []),
+            elapsed_seconds=d.get("elapsed_seconds"),
         )
 
 
@@ -290,8 +294,39 @@ class CalibrationProfile:
     temperature_observations: List[TemperatureObservation] = field(default_factory=list)
     soc_reports: List[SocReport] = field(default_factory=list)
 
+    reference_temp_c: Optional[float] = None
+
     warnings: List[str] = field(default_factory=list)
     schema_version: int = SCHEMA_VERSION
+
+    @property
+    def elapsed_seconds(self) -> List[float]:
+        """Observed full-session durations (seconds) from trusted ingestions (ADR-0012)."""
+        return [
+            o.elapsed_seconds
+            for o in self.full_observations
+            if o.elapsed_seconds is not None
+        ]
+
+    def estimated_duration_s(
+        self, pessimistic_default_s: float = 4 * 3600
+    ) -> tuple[float, float]:
+        """Return (mean_s, uncertainty_s) from observed full-session durations.
+
+        Falls back to (pessimistic_default_s, 20% of default) when no observations
+        exist. Uses fixed ±20% of mean for fewer than 3 observations; stddev otherwise
+        (ADR-0012).
+        """
+        import math
+
+        durations = self.elapsed_seconds
+        if not durations:
+            return pessimistic_default_s, 0.2 * pessimistic_default_s
+        mean = sum(durations) / len(durations)
+        if len(durations) < 3:
+            return mean, 0.2 * mean
+        variance = sum((d - mean) ** 2 for d in durations) / len(durations)
+        return mean, math.sqrt(variance)
 
     def ingest_full_session(
         self,
@@ -300,8 +335,16 @@ class CalibrationProfile:
         soc_at_start: Optional[SocReport] = None,
         assumptions: Optional[SocAssumptions] = None,
         timestamp: Optional[datetime] = None,
+        elapsed_seconds: Optional[float] = None,
+        session_temp_c: Optional[float] = None,
     ) -> None:
-        """Ingest a full (display-empty to completion) charge session."""
+        """Ingest a full (display-empty to completion) charge session.
+
+        ``elapsed_seconds`` records the observed session duration for finish-time
+        estimation (ADR-0012).  ``session_temp_c`` is stored as ``reference_temp_c``
+        on the profile so that the proximity check in future sessions can correct
+        for temperature when deciding full vs. partial ingestion.
+        """
         if timestamp is None:
             timestamp = datetime.now()
         if assumptions is None:
@@ -318,6 +361,7 @@ class CalibrationProfile:
             trusted=is_trusted,
             soc_at_start=soc_at_start,
             quality_flags=quality_flags,
+            elapsed_seconds=elapsed_seconds,
         )
         self.full_observations.append(obs)
 
@@ -347,6 +391,8 @@ class CalibrationProfile:
         self.taper_floor_w = summary.anchors.taper_floor_w
         self.active_full_wh = summary.active_full_wh
         self.assumptions = assumptions
+        if session_temp_c is not None:
+            self.reference_temp_c = session_temp_c
 
         if self.rated_capacity_wh is not None:
             self.overhead = OverheadEstimate(
@@ -477,6 +523,7 @@ class CalibrationProfile:
             ),
             "overhead": self.overhead.to_dict() if self.overhead else None,
             "assumptions": self.assumptions.to_dict() if self.assumptions else None,
+            "reference_temp_c": self.reference_temp_c,
             "full_observations": [obs.to_dict() for obs in self.full_observations],
             "partial_observations": [obs.to_dict() for obs in self.partial_observations],
             "temperature_observations": [obs.to_dict() for obs in self.temperature_observations],
@@ -507,6 +554,7 @@ class CalibrationProfile:
         )
         profile.taper_floor_w = d.get("taper_floor_w")
         profile.active_full_wh = d.get("active_full_wh")
+        profile.reference_temp_c = d.get("reference_temp_c")
         profile.overhead = (
             OverheadEstimate.from_dict(d["overhead"]) if d.get("overhead") else None
         )

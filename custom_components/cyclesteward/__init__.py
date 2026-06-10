@@ -52,6 +52,7 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
             power_entity_id=power_entity_id,
             plug_entity_id=plug_entity_id,
             temp_entity_id=temp_entity_id,
+            profile_store=store,
         )
         await watcher.async_start()
         hass.data[DOMAIN][f"{entry.entry_id}.{_WATCHER_KEY}"] = watcher

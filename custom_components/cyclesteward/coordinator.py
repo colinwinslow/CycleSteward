@@ -13,7 +13,7 @@ SessionController already maintains (ADR-0006).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 from cyclesteward.calibration import CalibrationProfile
 from cyclesteward.guardrails import GuardrailFault, GuardrailsConfig
@@ -102,6 +102,18 @@ class CyclestewardCoordinator:
     def target_wattage(self) -> Optional[float]:
         return self._controller.target_wattage
 
+    @property
+    def profile(self) -> CalibrationProfile:
+        return self._controller._profile
+
+    @property
+    def _temp_coeff_w_per_c(self) -> float:
+        return self._controller._temp_config.temp_coeff_w_per_c
+
+    @property
+    def _temp_baseline_c(self) -> float:
+        return self._controller._temp_config.baseline_temp_c
+
     # ── Write methods ─────────────────────────────────────────────────────────
 
     def set_mode(self, mode: ChargeMode) -> None:
@@ -144,6 +156,76 @@ class CyclestewardCoordinator:
         self._last_result = result
         self._notify()
         return result
+
+    def ingest_from_trace(
+        self,
+        trace: List[Tuple[datetime, float]],
+        *,
+        session_temp_c: Optional[float] = None,
+        proximity_frac: float = 0.15,
+    ) -> CalibrationProfile:
+        """Analyze a live power trace and ingest it as a full or partial session.
+
+        Decides between ingest_full_session / ingest_partial_session by comparing
+        the trace's detected CC-start wattage against the profile's stored
+        watts_at_low anchor, correcting for temperature when a reading is available
+        (see docs/research/temperature-battery-charging.md and
+        docs/specs/ha-calibration-ingestion.md).
+
+        Returns the (mutated) CalibrationProfile so the caller can persist it.
+        """
+        from cyclesteward.profile import analyze
+        from cyclesteward.samples import Sample
+
+        profile = self._controller._profile
+
+        if not trace:
+            return profile
+
+        samples = [Sample(timestamp=ts, power_w=w) for ts, w in trace]
+        elapsed_s = (
+            (trace[-1][0] - trace[0][0]).total_seconds() if len(trace) > 1 else None
+        )
+        summary = analyze(
+            samples,
+            profile_id=profile.meter_id,
+            idle_power_w=profile.idle_power_w,
+        )
+
+        if profile.watts_at_low is None:
+            # First calibration — no anchor to compare against.
+            profile.ingest_full_session(
+                summary, elapsed_seconds=elapsed_s, session_temp_c=session_temp_c
+            )
+            return profile
+
+        session_wal = summary.anchors.watts_at_low
+        if session_wal is None:
+            # Analyzer couldn't extract a CC-start wattage — can't confirm near-empty.
+            profile.ingest_partial_session(summary)
+            return profile
+
+        # Temperature-corrected proximity check.
+        anchor_w = profile.watts_at_low.watts
+        temp_coeff = self._temp_coeff_w_per_c
+        ref_temp = (
+            profile.reference_temp_c
+            if profile.reference_temp_c is not None
+            else self._temp_baseline_c
+        )
+        if session_temp_c is not None and temp_coeff != 0.0:
+            corrected_wal = session_wal + temp_coeff * (ref_temp - session_temp_c)
+        else:
+            corrected_wal = session_wal
+
+        if abs(corrected_wal - anchor_w) / anchor_w <= proximity_frac:
+            profile.ingest_full_session(
+                summary, elapsed_seconds=elapsed_s, session_temp_c=session_temp_c
+            )
+        else:
+            profile.ingest_partial_session(summary)
+
+        return profile
 
     # ── Listener management ───────────────────────────────────────────────────
 

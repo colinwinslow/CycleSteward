@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-from cyclesteward.session_control import SessionAction, SessionState
+from cyclesteward.session_control import ChargeMode, SessionAction, SessionState
 
 from .coordinator import CyclestewardCoordinator
 
@@ -57,6 +57,7 @@ class HASensorWatcher:
         plug_entity_id: str,
         temp_entity_id: Optional[str] = None,
         keepalive_interval_s: int = 60,
+        profile_store=None,
     ) -> None:
         self._hass = hass
         self._coordinator = coordinator
@@ -64,6 +65,7 @@ class HASensorWatcher:
         self._plug_entity_id = plug_entity_id
         self._temp_entity_id = temp_entity_id
         self._keepalive_interval_s = keepalive_interval_s
+        self._profile_store = profile_store
 
         self._cached_power_w: Optional[float] = None
         self._cached_temp_c: Optional[float] = None
@@ -142,7 +144,7 @@ class HASensorWatcher:
         if prev_state != SessionState.CHARGING and current_state == SessionState.CHARGING:
             self._trace_buffer.clear()
 
-        # Accumulate valid power readings for slice 3 calibration.
+        # Accumulate valid power readings for calibration.
         if power_w is not None:
             self._trace_buffer.append((now, power_w))
 
@@ -155,6 +157,22 @@ class HASensorWatcher:
             await self._hass.services.async_call(
                 "homeassistant", "turn_off", {"entity_id": self._plug_entity_id}
             )
+
+        # Taper-floor calibration ingestion (slice 3).
+        # Conditions: CHARGE_TO_FULL session that just transitioned to DONE_LATCHED_OFF
+        # via the taper floor.  All other endings (guardrail, target-wattage) are skipped.
+        if (
+            prev_state == SessionState.CHARGING
+            and current_state == SessionState.DONE_LATCHED_OFF
+            and self._coordinator.charge_mode == ChargeMode.CHARGE_TO_FULL
+            and "taper floor" in self._coordinator.session_reason
+            and self._profile_store is not None
+        ):
+            updated = self._coordinator.ingest_from_trace(
+                list(self._trace_buffer),
+                session_temp_c=self._cached_temp_c,
+            )
+            await self._profile_store.async_save(updated)
 
     # ── Event handlers ────────────────────────────────────────────────────────
 
