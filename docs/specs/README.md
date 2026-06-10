@@ -12,3 +12,5 @@ at `bdd/<feature>/<slug>-bdd.md`.
 - `low-battery-rescue` - probe and rescue behavior for depleted displays (draft)
 - `guardrails` - automation guardrails and fault behavior (draft)
 - `ha-entity-adapter` - HA coordinator + primary entity surface, first adapter slice (active)
+- `ha-adapter-wiring` - live sensor wiring, relay dispatch, trace buffer, profile persistence (active)
+- `ha-calibration-ingestion` - taper-completion calibration ingestion with temperature correction (active)

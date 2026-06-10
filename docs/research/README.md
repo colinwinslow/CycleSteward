@@ -9,3 +9,4 @@ promoted to specs or ADRs.
 - `ha-adapter-lessons` - Home Assistant adapter pitfalls to avoid (open)
 - `naming` - candidate integration names (resolved: CycleSteward)
 - `unresolved-questions` - design questions to continue with the agent (open)
+- `temperature-battery-charging` - how temperature affects battery charging; non-linear BMS current reduction, correction formula, Shimano operating window (open)
