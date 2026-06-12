@@ -26,6 +26,7 @@ class ChargeMode(str, Enum):
 class SessionState(str, Enum):
     IDLE = "idle"
     WAITING_FOR_SCHEDULE = "waiting_for_schedule"
+    PROBING = "probing"
     HEAT_DELAY = "heat_delay"
     CHARGING = "charging"
     DONE_LATCHED_OFF = "done_latched_off"
@@ -105,6 +106,7 @@ class SessionConfig:
     scheduled_start: Optional[time] = None
     morning_reset_time: time = field(default_factory=lambda: time(6, 0))
     taper_below_floor_seconds: float = 300.0
+    max_probe_seconds: float = 300.0
 
 
 class SessionController:
@@ -116,6 +118,7 @@ class SessionController:
     State machine (normal path):
       IDLE ──(mode set, no schedule)──► CHARGING ──(threshold crossed)──► DONE_LATCHED_OFF
       IDLE ──(mode set, future schedule)──► WAITING_FOR_SCHEDULE ──(time arrived)──► CHARGING
+      WAITING_FOR_SCHEDULE ──(start_probe called)──► PROBING ──(done/timeout)──► WAITING_FOR_SCHEDULE
       IDLE ──(temperature too hot)──► HEAT_DELAY ──(cooled)──► IDLE ──► CHARGING
       Any state ──(morning reset)──► IDLE (mode cleared)
       Any state ──(guardrail fault)──► FAULTED (requires explicit user action to resume)
@@ -140,6 +143,7 @@ class SessionController:
         self._last_morning_reset: Optional[datetime] = None
         self._heat_delay_start: Optional[datetime] = None
         self._taper_start: Optional[datetime] = None
+        self._probe_start: Optional[datetime] = None
 
         self.event_log: List[str] = []
 
@@ -188,6 +192,30 @@ class SessionController:
         if self._mode in (ChargeMode.CHARGE_TO_TARGET, ChargeMode.CHARGE_TO_FULL):
             self._state = SessionState.CHARGING
 
+    def start_probe(self, now: datetime) -> bool:
+        """Begin a SoC-estimation probe (ADR-0012 decision B).
+
+        Transitions WAITING_FOR_SCHEDULE → PROBING and issues TURN_ON.
+        Returns True if the transition happened, False if the state was wrong.
+        """
+        if self._state != SessionState.WAITING_FOR_SCHEDULE:
+            return False
+        self._state = SessionState.PROBING
+        self._probe_start = now
+        return True
+
+    def end_probe(self) -> bool:
+        """Conclude an active probe and return to WAITING_FOR_SCHEDULE.
+
+        Called by the adapter when a usable wattage reading has been obtained
+        or the probe is being abandoned.  Returns True if a transition happened.
+        """
+        if self._state != SessionState.PROBING:
+            return False
+        self._state = SessionState.WAITING_FOR_SCHEDULE
+        self._probe_start = None
+        return True
+
     def tick(
         self,
         power_w: Optional[float],
@@ -195,12 +223,16 @@ class SessionController:
         now: datetime,
         *,
         plug_is_on: Optional[bool] = None,
+        computed_start_time: Optional[datetime] = None,
     ) -> TickResult:
         """Evaluate one sample and return the action to take.
 
         ``power_w`` and ``temperature_c`` may be ``None`` (unknown/unavailable).
         ``plug_is_on`` is the observed smart-plug state; used to confirm TURN_OFF
         commands.  Pass ``None`` when the plug state is not known.
+        ``computed_start_time`` is the adapter-derived datetime to begin charging
+        (ADR-0012 D); if supplied it replaces the time-of-day ``scheduled_start``
+        check while in ``WAITING_FOR_SCHEDULE``.
 
         The controller defaults safely on missing readings (hold, no cutoff misfire).
         """
@@ -254,14 +286,53 @@ class SessionController:
                 "faulted; awaiting user action"
             )
 
-        # 5. Missing/non-numeric power: hold safely, no progress, no cutoff misfire.
+        # 5. Probing: handled before the power-null guard so probe timeout fires
+        #    even when the meter is temporarily unavailable (ADR-0012 B).
+        #    The relay is already on (start_probe() issued TURN_ON via adapter).
+        if self._state == SessionState.PROBING:
+            # Probe timeout: fall back to WAITING_FOR_SCHEDULE; adapter will use
+            # the pessimistic computed_start_time (ADR-0012 B fallback).
+            if (
+                self._probe_start is not None
+                and (now - self._probe_start).total_seconds()
+                >= self._config.max_probe_seconds
+            ):
+                self._state = SessionState.WAITING_FOR_SCHEDULE
+                self._probe_start = None
+                soc_est = (
+                    self._estimate_soc(power_w, temperature_c)
+                    if power_w is not None
+                    else None
+                )
+                return TickResult(
+                    SessionAction.TURN_OFF,
+                    SessionState.WAITING_FOR_SCHEDULE,
+                    soc_est,
+                    "probe timeout: returning to schedule; using pessimistic start time",
+                )
+            if power_w is None:
+                return TickResult(
+                    SessionAction.NONE, SessionState.PROBING, None,
+                    "Probing: estimating SoC (≤5 min)"
+                )
+            # Accumulate Wh during probe so energy consumed counts toward the
+            # guardrail on the subsequent CHARGING session (ADR-0005 invariant 7).
+            idle_w = self._profile.idle_power_w or 0.0
+            self._guardrails.accumulate(power_w, idle_w, now)
+            soc_est = self._estimate_soc(power_w, temperature_c)
+            return TickResult(
+                SessionAction.NONE, SessionState.PROBING, soc_est,
+                "Probing: estimating SoC (≤5 min)"
+            )
+
+        # 6. Missing/non-numeric power: hold safely, no progress, no cutoff misfire.
         if power_w is None:
             return TickResult(
                 SessionAction.NONE, self._state, None,
                 "power reading unavailable; holding"
             )
 
-        # 6. Temperature gate (applies before starting a new charge).
+        # 7. Temperature gate (applies before starting a new charge).
         if self._state in (
             SessionState.IDLE,
             SessionState.WAITING_FOR_SCHEDULE,
@@ -274,12 +345,21 @@ class SessionController:
         # 7. Schedule check: if an active mode is set and we are not yet charging,
         #    check whether to wait or start.
         if self._state in (SessionState.IDLE, SessionState.WAITING_FOR_SCHEDULE):
-            if self._config.scheduled_start is not None:
+            # ADR-0012 D: computed_start_time (adapter-derived datetime) takes
+            # precedence over the legacy time-of-day scheduled_start when supplied.
+            if computed_start_time is not None:
+                if now < computed_start_time:
+                    self._state = SessionState.WAITING_FOR_SCHEDULE
+                    return TickResult(
+                        SessionAction.NONE, SessionState.WAITING_FOR_SCHEDULE, None,
+                        f"Scheduled: waiting for start time (target {computed_start_time.strftime('%H:%M')})"
+                    )
+            elif self._config.scheduled_start is not None:
                 if now.time() < self._config.scheduled_start:
                     self._state = SessionState.WAITING_FOR_SCHEDULE
                     return TickResult(
                         SessionAction.NONE, SessionState.WAITING_FOR_SCHEDULE, None,
-                        f"before scheduled start {self._config.scheduled_start}"
+                        f"Scheduled: waiting for start time (target {self._config.scheduled_start})"
                     )
             # No schedule, or past the scheduled start time: begin charging.
             self._state = SessionState.CHARGING

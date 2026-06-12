@@ -137,6 +137,18 @@ class CyclestewardCoordinator:
         self._notify()
         return True
 
+    def start_probe(self, now: datetime) -> bool:
+        """Transition WAITING_FOR_SCHEDULE → PROBING (ADR-0012 B)."""
+        result = self._controller.start_probe(now)
+        self._notify()
+        return result
+
+    def end_probe(self) -> bool:
+        """Conclude an active probe; transition PROBING → WAITING_FOR_SCHEDULE."""
+        result = self._controller.end_probe()
+        self._notify()
+        return result
+
     def tick(
         self,
         power_w: Optional[float],
@@ -144,14 +156,18 @@ class CyclestewardCoordinator:
         now: datetime,
         *,
         plug_is_on: Optional[bool] = None,
+        computed_start_time: Optional[datetime] = None,
     ) -> TickResult:
         """Advance one sample period and return the action to take.
 
         Callers should act on TickResult.action (TURN_ON / TURN_OFF / NONE)
         immediately.  The coordinator stores the result and notifies listeners.
+        ``computed_start_time`` is passed through to SessionController (ADR-0012 D).
         """
         result = self._controller.tick(
-            power_w, temperature_c, now, plug_is_on=plug_is_on
+            power_w, temperature_c, now,
+            plug_is_on=plug_is_on,
+            computed_start_time=computed_start_time,
         )
         self._last_result = result
         self._notify()

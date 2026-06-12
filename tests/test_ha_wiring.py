@@ -62,6 +62,7 @@ def _make_hass(plug_state: str = "off") -> SimpleNamespace:
     hass = SimpleNamespace(
         states=SimpleNamespace(get=lambda entity_id: plug_mock),
         services=SimpleNamespace(async_call=AsyncMock()),
+        bus=SimpleNamespace(async_fire=MagicMock()),
     )
     return hass
 
@@ -258,11 +259,11 @@ class TestHASensorWatcher:
 
     def test_power_update_calls_tick_and_dispatches_turn_on(self):
         # Profile: target at 80% SoC = 95 W (65-130 W ramp); 80 W < target → TURN_ON
+        # Use fixed T0 (midnight) to avoid morning-reset interference with wall time.
         watcher, coordinator, hass = _make_watcher()
         coordinator.set_mode(ChargeMode.CHARGE_TO_TARGET)
 
-        event = _make_event("80.0")
-        run(watcher._handle_power_state_change(event))
+        run(watcher._do_tick(80.0, T0))
 
         hass.services.async_call.assert_called_once_with(
             "homeassistant", "turn_on", {"entity_id": "switch.plug"}
@@ -301,8 +302,8 @@ class TestHASensorWatcher:
         coordinator.set_mode(ChargeMode.CHARGE_TO_TARGET)
 
         run(watcher._handle_temp_state_change(_make_event("22.5")))
-        # Power event drives the tick; temp_c=22.5 should be passed internally
-        run(watcher._handle_power_state_change(_make_event("80.0")))
+        # Use fixed T0 to avoid morning-reset interference with wall time.
+        run(watcher._do_tick(80.0, T0))
         # No crash; coordinator advanced normally
         assert coordinator.session_state == SessionState.CHARGING
 
@@ -396,8 +397,8 @@ class TestHASensorWatcher:
         watcher, coordinator, hass = _make_watcher()
         coordinator.set_mode(ChargeMode.CHARGE_TO_TARGET)
 
-        # Cache a power reading via a normal power event
-        run(watcher._handle_power_state_change(_make_event("85.0")))
+        # Use fixed T0 to avoid morning-reset interference with wall time.
+        run(watcher._do_tick(85.0, T0))
         hass.services.async_call.reset_mock()
 
         # Keepalive fires with no new power event — should use cached 85.0

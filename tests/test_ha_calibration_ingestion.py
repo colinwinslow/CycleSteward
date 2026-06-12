@@ -63,6 +63,7 @@ def _make_hass(plug_state: str = "off") -> SimpleNamespace:
     return SimpleNamespace(
         states=SimpleNamespace(get=lambda entity_id: plug_mock),
         services=SimpleNamespace(async_call=AsyncMock()),
+        bus=SimpleNamespace(async_fire=MagicMock()),
     )
 
 

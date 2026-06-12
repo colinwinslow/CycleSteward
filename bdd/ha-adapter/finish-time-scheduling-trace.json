@@ -1,0 +1,215 @@
+{
+  "scenario": "Scenario A: full scheduling cycle \u2014 probe, refined start, DONE_LATCHED_OFF",
+  "profile": {
+    "charger": "Shimano",
+    "battery": "STEPS",
+    "watts_at_low": 65.0,
+    "watts_at_transition": 130.0,
+    "full_observations_count": 2,
+    "mean_duration_s": 7500.0,
+    "max_duration_s": 8100.0
+  },
+  "schedule": {
+    "target_finish_time": "2026-01-01T05:00:00+00:00",
+    "margin_s": 1800.0,
+    "probe_headroom_s": 600.0,
+    "pessimistic_start": "2026-01-01T02:15:00+00:00",
+    "probe_time": "2026-01-01T02:05:00+00:00",
+    "refined_start": "2026-01-01T03:03:27.692308+00:00"
+  },
+  "logbook_events": [
+    {
+      "event": "probe_start",
+      "timestamp": "2026-01-01T02:05:00+00:00",
+      "reason": "Probing: estimating SoC (<=5 min)"
+    },
+    {
+      "event": "probe_result",
+      "timestamp": "2026-01-01T02:06:30+00:00",
+      "soc_estimate_pct": 30.8,
+      "uncertainty_pct": 10.0,
+      "computed_start_time": "2026-01-01T03:03:27.692308+00:00"
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-01-01T03:03:27.692308+00:00",
+      "reason": "starting charge",
+      "target_finish_time": "2026-01-01T05:00:00+00:00"
+    }
+  ],
+  "trace": [
+    {
+      "timestamp": "2026-01-01T00:00:00+00:00",
+      "label": "waiting_tick_0",
+      "power_w": 80.0,
+      "state": "waiting_for_schedule",
+      "action": "none",
+      "reason": "Scheduled: waiting for start time (target 02:15)"
+    },
+    {
+      "timestamp": "2026-01-01T00:10:00+00:00",
+      "label": "waiting_tick_1",
+      "power_w": 80.0,
+      "state": "waiting_for_schedule",
+      "action": "none",
+      "reason": "Scheduled: waiting for start time (target 02:15)"
+    },
+    {
+      "timestamp": "2026-01-01T00:20:00+00:00",
+      "label": "waiting_tick_2",
+      "power_w": 80.0,
+      "state": "waiting_for_schedule",
+      "action": "none",
+      "reason": "Scheduled: waiting for start time (target 02:15)"
+    },
+    {
+      "timestamp": "2026-01-01T02:05:00+00:00",
+      "label": "probe_start",
+      "start_probe_ok": true,
+      "state": "probing",
+      "event": "probe_start",
+      "reason": "Probing: estimating SoC (<=5 min)",
+      "expected_duration_s": 300.0
+    },
+    {
+      "timestamp": "2026-01-01T02:05:00+00:00",
+      "label": "probe_tick_0",
+      "power_w": 90.0,
+      "state": "probing",
+      "action": "none",
+      "reason": "Probing: estimating SoC (\u22645 min)",
+      "soc_estimate": {
+        "estimated_soc_pct": 30.8,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      }
+    },
+    {
+      "timestamp": "2026-01-01T02:05:30+00:00",
+      "label": "probe_tick_1",
+      "power_w": 90.0,
+      "state": "probing",
+      "action": "none",
+      "reason": "Probing: estimating SoC (\u22645 min)",
+      "soc_estimate": {
+        "estimated_soc_pct": 30.8,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      }
+    },
+    {
+      "timestamp": "2026-01-01T02:06:00+00:00",
+      "label": "probe_tick_2",
+      "power_w": 90.0,
+      "state": "probing",
+      "action": "none",
+      "reason": "Probing: estimating SoC (\u22645 min)",
+      "soc_estimate": {
+        "estimated_soc_pct": 30.8,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      }
+    },
+    {
+      "timestamp": "2026-01-01T02:06:30+00:00",
+      "label": "probe_result",
+      "state": "waiting_for_schedule",
+      "event": "probe_result",
+      "soc_estimate_pct": 30.8,
+      "uncertainty_pct": 10.0,
+      "computed_start_time": "2026-01-01T03:03:27.692308+00:00",
+      "reason": "probe complete: SoC ~31%; start time updated"
+    },
+    {
+      "timestamp": "2026-01-01T02:07:00+00:00",
+      "label": "refined_waiting_tick_0",
+      "power_w": 80.0,
+      "state": "waiting_for_schedule",
+      "action": "none",
+      "reason": "Scheduled: waiting for start time (target 03:03)"
+    },
+    {
+      "timestamp": "2026-01-01T02:17:00+00:00",
+      "label": "refined_waiting_tick_1",
+      "power_w": 80.0,
+      "state": "waiting_for_schedule",
+      "action": "none",
+      "reason": "Scheduled: waiting for start time (target 03:03)"
+    },
+    {
+      "timestamp": "2026-01-01T02:27:00+00:00",
+      "label": "refined_waiting_tick_2",
+      "power_w": 80.0,
+      "state": "waiting_for_schedule",
+      "action": "none",
+      "reason": "Scheduled: waiting for start time (target 03:03)"
+    },
+    {
+      "timestamp": "2026-01-01T03:03:27.692308+00:00",
+      "label": "charging_start",
+      "power_w": 80.0,
+      "state": "charging",
+      "action": "turn_on",
+      "reason": "starting charge"
+    },
+    {
+      "timestamp": "2026-01-01T03:13:27.692308+00:00",
+      "label": "charging_tick_0",
+      "power_w": 80.0,
+      "state": "charging",
+      "action": "none",
+      "reason": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 18.5,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      }
+    },
+    {
+      "timestamp": "2026-01-01T03:33:27.692308+00:00",
+      "label": "charging_tick_1",
+      "power_w": 90.0,
+      "state": "charging",
+      "action": "none",
+      "reason": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 30.8,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      }
+    },
+    {
+      "timestamp": "2026-01-01T03:53:27.692308+00:00",
+      "label": "charging_tick_2",
+      "power_w": 100.0,
+      "state": "charging",
+      "action": "none",
+      "reason": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 43.1,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      }
+    },
+    {
+      "timestamp": "2026-01-01T04:55:00+00:00",
+      "label": "cutoff",
+      "power_w": 130.0,
+      "state": "done_latched_off",
+      "action": "turn_off",
+      "reason": "wattage 130.0 W >= target 130.0 W; cutoff",
+      "soc_estimate": {
+        "estimated_soc_pct": 80.0,
+        "uncertainty_pct": 15.0,
+        "low_confidence": true,
+        "note": "above CC/CV transition; model less reliable"
+      }
+    }
+  ]
+}

@@ -124,7 +124,7 @@
     "reference_temp_c": null,
     "full_observations": [
       {
-        "timestamp": "2026-06-09T22:24:55.240153",
+        "timestamp": "2026-06-12T16:52:04.944380",
         "active_wh": 84.25,
         "watts_at_low": 95.0,
         "watts_at_transition": 95.0,

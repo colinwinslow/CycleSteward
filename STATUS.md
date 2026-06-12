@@ -1,19 +1,34 @@
 # STATUS.md
 
-**Last updated:** 2026-06-09 (HA adapter slice 3 done: taper-completion calibration ingestion, 20 new tests (194 total), BDD A–F evidence, arch + BDD reviews OK)
+**Last updated:** 2026-06-12 (finish-time scheduling done: PROBING state, computed_start_time, session_reason, probe scheduling, logbook events, overrun detection, 39 new tests (233 total), BDD A–F evidence, arch + BDD reviews OK)
 **Phase:** Phase 2 - HA adapter
-**Next bounded packet:** TBD — finish-time scheduling (ADR-0012 decisions B–D: probe cadence, margin, dynamic start time) or setup-flow / config-entry UX.
+**Next bounded packet:** TBD — setup-flow / config-entry UX, or config-entry plumbing for target_finish_time and margin_s.
 **Current readiness:** READY-FOR-NEXT-PACKET
 
 ## Recent sessions (rolling, last 5)
 
+- **2026-06-12** - Finish-time scheduling done (ADR-0012 decisions B–D). `SessionState.PROBING` + `start_probe`/`end_probe` in `SessionController` and coordinator. `session_reason` on all non-idle states. `computed_start_time` kwarg threaded through `tick()`. `HASensorWatcher` rewritten: `set_target_finish_time()`, `_pessimistic_start_time()`, `_probe_time()`, `_fire_event()` logbook helper; probe fires once per cycle, updates `computed_start_time` on success or falls back to pessimistic on timeout; overrun event fires once per session without faulting; PROBING accumulates Wh for energy guardrail. 39 new tests (233 total), ruff clean. Anchor: `bdd/ha-adapter/finish-time-scheduling-trace.json`. BDD A–F evidence; arch review (0 violations, 3 concerns addressed); BDD review (FAULTED coverage gap closed).
 - **2026-06-09** - HA adapter slice 3 done. `CalibrationProfile`: `elapsed_seconds` field on `FullObservation`, `reference_temp_c` field, `elapsed_seconds` property, `estimated_duration_s()` method (ADR-0012 decision A). `CyclestewardCoordinator.ingest_from_trace()`: converts live trace to Samples, calls `analyze()`, applies temperature-corrected proximity check (full vs. partial decision), calls appropriate ingest method, returns updated profile. `HASensorWatcher._do_tick()`: ingestion trigger on CHARGING→DONE_LATCHED_OFF with "taper floor" reason in CHARGE_TO_FULL mode; awaits `ProfileStore.async_save()`. Research note on non-linear temperature effects added. 20 new tests (194 total), ruff clean. Anchor: `bdd/ha-adapter/ha-calibration-ingestion-trace.json`. BDD A–F evidence; arch review (0 invariant violations, 2 concerns addressed); BDD review (3 concerns addressed: temp-correction proof, silent guard removed, reference_temp assertion hardened).
 - **2026-06-09** - HA adapter slice 2 done. `CalibrationProfile.from_dict/from_json` added to all calibration dataclasses. `ProfileStore` (HA storage wrapper: load/save CalibrationProfile). `HASensorWatcher`: subscribes to HA power/temp state-change events, drives `coordinator.tick()` on each update + 60s keepalive, reads `plug_is_on` from HA state at tick time, dispatches relay TURN_ON/TURN_OFF, accumulates live power trace buffer (clears on CHARGING entry, retained through DONE_LATCHED_OFF for slice 3). `__init__.py` updated: loads profile from store on setup, starts/stops watcher. 34 new tests (174 total), ruff clean. Anchor: `bdd/ha-adapter/ha-adapter-wiring-trace.json`. BDD A–G evidence; arch review (0 violations); BDD review OK.
 - **2026-06-09** - HA adapter slice 1 done. `custom_components/cyclesteward/` scaffolded: `CyclestewardCoordinator` (pure Python, no HA imports) wraps `SessionController`; exposes `charge_mode`, `session_state`, `soc_estimate`, `active_fault`, `session_reason`, `active_wh`, `relay_cycle_count`, `session_start`, `target_wattage`. All ADR-0011 entities implemented: `charge_mode` select, `session_state` + `soc_estimate` + `fault` sensors (primary), 4 diagnostic sensors, `manual_override` switch, `acknowledge_fault` button, `target_finish_time` + `morning_reset_time` time stubs. `__init__.py`, `config_flow.py` (stub), `const.py`, `manifest.json`, `services.yaml` (5 service declarations). Added `relay_cycle_count`, `session_start` to `GuardrailEvaluator`; `active_wh`, `relay_cycle_count`, `session_start`, `target_wattage` to `SessionController`. 12 new tests (140 total), ruff clean. Anchor: `bdd/ha-adapter/ha-entity-adapter-trace.json`. BDD A–J evidence; arch review (3 concerns addressed); BDD review OK.
 - **2026-06-09** - ADR-0012 accepted. (A) Duration estimation: `elapsed_seconds` in `CalibrationProfile.ingest_full_session`; `estimated_duration_s()` returns mean±stddev; 4 h pessimistic default. (B) Probe cadence: fires at `target_finish_time − max_duration − margin − 10 min`; failure → pessimistic fallback + logbook event. (C) Margin: 30 min fixed default, user-configurable. (D) Dynamic start time: `tick()` gains optional `computed_start_time` param. Queue item (g) closed.
-- **2026-06-09** - HA entity/service surface + probe transparency - ADR-0011 accepted: 5 primary entities (`charge_mode` select, `soc_estimate` sensor, `session_state` sensor, `fault` sensor, `manual_override` switch), 4 diagnostic sensors, 2 runtime `time` entities (`target_finish_time` + `morning_reset_time`), `acknowledge_fault` button, 5 services. Schedule is expressed as target finish time; start time is derived. ADR-0012 drafted: probe transparency requirement decided (`session_reason` attribute on `session_state` + logbook events for all automatic energizations, including ADR-0005 rescue probe); four algorithm open questions captured (duration estimation, probe cadence/fallback, margin policy, dynamic start-time + WAITING_FOR_SCHEDULE). Cross-reference added to ADR-0005. Queue item (f) closed.
 - **2026-06-09** - Guardrails slice A–G. New `src/cyclesteward/guardrails.py`: `GuardrailsConfig`, `GuardrailFault`, `GuardrailResult`, `GuardrailEvaluator`. A: max-runtime fault. B: max-active-Wh fault (profile-derived 1.2× limit). C: relay chatter prevention (min_dwell + relay_cycle_limit). D: switch-command failure. E/F/G: temperature-gate + missing-reading paths verified. 32 new tests (127 total), ruff clean. BDD A–G evidence; arch + BDD reviews OK.
 ## Active work
+
+### Finish-time scheduling (DONE 2026-06-12)
+
+- [x] `SessionState.PROBING` in enum; `max_probe_seconds` in `SessionConfig`.
+- [x] `start_probe(now)` / `end_probe()` on `SessionController` and `CyclestewardCoordinator`.
+- [x] `session_reason` non-empty on all non-idle states (WAITING, PROBING, CHARGING, DONE_LATCHED_OFF, FAULTED).
+- [x] `computed_start_time: Optional[datetime]` kwarg on `tick()` — overrides time-of-day schedule.
+- [x] PROBING section moved before `power_w is None` guard so timeout fires without power readings.
+- [x] PROBING tick accumulates Wh via `_guardrails.accumulate()` (invariant 7).
+- [x] `HASensorWatcher`: `set_target_finish_time()`, `_pessimistic_start_time()`, `_probe_time()`, `_max_duration_s()`.
+- [x] `_fire_event()` logbook helper: fires `cyclesteward_event` on HA bus with standard schema.
+- [x] Probe fires once per cycle at `probe_time`; success updates `computed_start_time`; timeout falls back to pessimistic.
+- [x] `session_start` event on WAITING→CHARGING; `overrun` event fires once per session without faulting.
+- [x] Pre-existing morning-reset failures in `test_ha_wiring.py` fixed (use fixed T0 timestamps).
+- [x] 39 new tests (233 total), ruff clean. Anchor: `bdd/ha-adapter/finish-time-scheduling-trace.json`. BDD A–F evidence; arch review (0 violations, 3 concerns addressed); BDD review OK (FAULTED gap closed).
 
 ### HA adapter slice 3 (DONE 2026-06-09)
 
