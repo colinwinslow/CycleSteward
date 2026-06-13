@@ -206,15 +206,25 @@ class HASensorWatcher:
             pt = self._probe_time()
             if pt is not None and now >= pt:
                 self._probe_fired = True
-                self._coordinator.start_probe(now)
-                self._fire_event(
-                    "probe_start",
-                    "Probing: estimating SoC (≤5 min)",
-                    {"expected_duration_s": self._coordinator._controller._config.max_probe_seconds},
-                )
-                await self._hass.services.async_call(
-                    "homeassistant", "turn_on", {"entity_id": self._plug_entity_id}
-                )
+                # start_probe can refuse (relay guardrail suppression); never
+                # energize the plug on a refusal — fall back to the pessimistic
+                # start time already in place.
+                if self._coordinator.start_probe(now):
+                    self._fire_event(
+                        "probe_start",
+                        "Probing: estimating SoC (≤5 min)",
+                        {"expected_duration_s": self._coordinator._controller._config.max_probe_seconds},
+                    )
+                    await self._hass.services.async_call(
+                        "homeassistant", "turn_on", {"entity_id": self._plug_entity_id}
+                    )
+                else:
+                    self._fire_event(
+                        "probe_result",
+                        "probe refused by relay guardrail; using pessimistic start time",
+                        {"computed_start_time": (self._computed_start_time.isoformat()
+                                                 if self._computed_start_time else None)},
+                    )
                 return
 
         # ── Probe reading accumulation ─────────────────────────────────────────
@@ -264,8 +274,8 @@ class HASensorWatcher:
                     self._target_finish_time
                     - timedelta(seconds=estimated_remaining_s + self._margin_s)
                 )
-                # Conclude probe.
-                self._coordinator.end_probe()
+                # Conclude probe; arm command confirmation for the TURN_OFF below.
+                self._coordinator.end_probe(now)
                 await self._hass.services.async_call(
                     "homeassistant", "turn_off", {"entity_id": self._plug_entity_id}
                 )

@@ -143,9 +143,13 @@ class CyclestewardCoordinator:
         self._notify()
         return result
 
-    def end_probe(self) -> bool:
-        """Conclude an active probe; transition PROBING → WAITING_FOR_SCHEDULE."""
-        result = self._controller.end_probe()
+    def end_probe(self, now: Optional[datetime] = None) -> bool:
+        """Conclude an active probe; transition PROBING → WAITING_FOR_SCHEDULE.
+
+        Pass ``now`` when a TURN_OFF is being dispatched so the command-
+        confirmation guardrail arms for the probe's off command (ADR-0012 B).
+        """
+        result = self._controller.end_probe(now)
         self._notify()
         return result
 

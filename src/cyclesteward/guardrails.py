@@ -94,11 +94,21 @@ class GuardrailEvaluator:
         self._pending_off_deadline = None
 
     def on_charging_started(self, now: datetime) -> None:
-        """Record session start when TURN_ON is committed."""
+        """Record session start when TURN_ON is committed.
+
+        Does not zero ``active_wh`` or the relay-transition list: energy and
+        relay cycles recorded by a scheduling probe earlier in the same cycle
+        must count toward this session's guardrails (ADR-0005 invariant 7,
+        ADR-0012 B).  Per-session zeroing happens in ``reset()`` at mode
+        changes and morning reset.
+        """
         self._session_start = now
-        self._active_wh = 0.0
-        self._relay_transitions = [now]
+        self._relay_transitions.append(now)
         self._last_tick_time = now
+
+    def on_turn_on_committed(self, now: datetime) -> None:
+        """Record a committed TURN_ON outside charging start (e.g. a probe)."""
+        self._relay_transitions.append(now)
 
     def on_turn_off_committed(self, now: datetime) -> None:
         """Record a committed TURN_OFF and arm the command-confirmation deadline."""
@@ -112,8 +122,8 @@ class GuardrailEvaluator:
 
         Lazy-initialises session_start if on_charging_started was never called
         (e.g. after manual_override_on() which has no timestamp parameter).
-        relay_transitions is intentionally left empty in that case so check_relay
-        does not suppress the first toggle on the manual-override path.
+        No relay transition is recorded here, so on a pure manual-override path
+        (no preceding probe) check_relay does not suppress the first toggle.
         """
         if self._session_start is None:
             self._session_start = now

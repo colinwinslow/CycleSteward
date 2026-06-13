@@ -183,7 +183,12 @@ class TestProbingState:
         assert "timeout" in result.reason.lower()
 
     def test_probing_accumulates_wh_for_energy_guardrail(self):
-        """Wh consumed during PROBING counts toward the energy guardrail (ADR-0005 invariant 7)."""
+        """Wh consumed during PROBING counts toward the energy guardrail (ADR-0005 invariant 7).
+
+        The end-to-end property: probe Wh must be *retained* when the real
+        CHARGING session starts, not just accumulated during PROBING and then
+        discarded (review finding F2).
+        """
         profile = _calibrated_profile()
         profile.idle_power_w = 2.0
         coordinator = CyclestewardCoordinator(profile)
@@ -193,8 +198,18 @@ class TestProbingState:
         # Two probe ticks at 90W, 60s apart → active_wh accumulates
         coordinator.tick(90.0, None, t(30))
         coordinator.tick(90.0, None, t(60))
-        # active_wh should be > 0 after probe ticks
-        assert coordinator.active_wh > 0.0
+        probe_wh = coordinator.active_wh
+        assert probe_wh > 0.0
+        coordinator.end_probe()
+
+        # Start time arrives → CHARGING.  Probe Wh must survive the transition.
+        result = coordinator.tick(80.0, None, t(3600), computed_start_time=t(3600))
+        assert result.state == SessionState.CHARGING
+        assert coordinator.active_wh >= probe_wh
+
+        # And further charging accumulation builds on top of the probe Wh.
+        coordinator.tick(90.0, None, t(3660), computed_start_time=t(3600))
+        assert coordinator.active_wh > probe_wh
 
     def test_probing_tick_with_no_power_stays_probing(self):
         profile = _calibrated_profile()
@@ -204,6 +219,81 @@ class TestProbingState:
         coordinator.start_probe(T0)
         result = coordinator.tick(None, None, t(30))
         assert result.state == SessionState.PROBING
+
+
+class TestProbeRelayGuardrails:
+    """Probe relay operations must go through the guardrail evaluator (review F3).
+
+    ADR-0012 B: probes 'require the same guardrail path' as charge sessions —
+    probe energizations count as relay cycles, and a probe TURN_OFF that the
+    plug ignores must fault via command confirmation (guardrail D).
+    """
+
+    def test_probe_relay_transitions_counted(self):
+        """start_probe and the timeout TURN_OFF each count as a relay transition."""
+        profile = _calibrated_profile()
+        config = SessionConfig(max_probe_seconds=60.0)
+        coordinator = CyclestewardCoordinator(profile, config=config)
+        coordinator.set_mode(ChargeMode.CHARGE_TO_TARGET)
+        coordinator.tick(80.0, None, T0, computed_start_time=t(3600))
+        assert coordinator.relay_cycle_count == 0
+        coordinator.start_probe(T0)
+        assert coordinator.relay_cycle_count == 1
+        coordinator.tick(90.0, None, t(61))  # timeout → TURN_OFF
+        assert coordinator.relay_cycle_count == 2
+
+    def test_probe_timeout_turn_off_arms_command_confirmation(self):
+        """If the plug ignores the probe-timeout TURN_OFF, guardrail D faults."""
+        from cyclesteward.guardrails import GuardrailFault
+
+        profile = _calibrated_profile()
+        config = SessionConfig(max_probe_seconds=60.0)
+        coordinator = CyclestewardCoordinator(profile, config=config)
+        coordinator.set_mode(ChargeMode.CHARGE_TO_TARGET)
+        coordinator.tick(80.0, None, T0, computed_start_time=t(3600))
+        coordinator.start_probe(T0)
+        result = coordinator.tick(90.0, None, t(61))  # timeout → TURN_OFF
+        assert result.state == SessionState.WAITING_FOR_SCHEDULE
+
+        # Plug still reports on past the confirmation deadline (10 s default).
+        result = coordinator.tick(
+            90.0, None, t(75), plug_is_on=True, computed_start_time=t(3600)
+        )
+        assert result.state == SessionState.FAULTED
+        assert result.fault == GuardrailFault.SWITCH_COMMAND_FAILURE
+
+    def test_end_probe_with_now_arms_command_confirmation(self):
+        """A successful probe's TURN_OFF (adapter-dispatched) is also confirmed."""
+        from cyclesteward.guardrails import GuardrailFault
+
+        profile = _calibrated_profile()
+        coordinator = CyclestewardCoordinator(profile)
+        coordinator.set_mode(ChargeMode.CHARGE_TO_TARGET)
+        coordinator.tick(80.0, None, T0, computed_start_time=t(3600))
+        coordinator.start_probe(T0)
+        coordinator.tick(90.0, None, t(30))
+        coordinator.end_probe(t(40))
+
+        result = coordinator.tick(
+            90.0, None, t(55), plug_is_on=True, computed_start_time=t(3600)
+        )
+        assert result.state == SessionState.FAULTED
+        assert result.fault == GuardrailFault.SWITCH_COMMAND_FAILURE
+
+    def test_end_probe_confirmation_clears_when_plug_reports_off(self):
+        """The armed probe TURN_OFF deadline clears normally when the plug obeys."""
+        profile = _calibrated_profile()
+        coordinator = CyclestewardCoordinator(profile)
+        coordinator.set_mode(ChargeMode.CHARGE_TO_TARGET)
+        coordinator.tick(80.0, None, T0, computed_start_time=t(3600))
+        coordinator.start_probe(T0)
+        coordinator.tick(90.0, None, t(30))
+        coordinator.end_probe(t(40))
+
+        result = coordinator.tick(
+            5.0, None, t(55), plug_is_on=False, computed_start_time=t(3600)
+        )
+        assert result.state == SessionState.WAITING_FOR_SCHEDULE
 
 
 # ── Step 2 tests: computed_start_time ──────────────────────────────────────────
@@ -371,6 +461,31 @@ class TestProbeScheduling:
             for call in hass.bus.async_fire.call_args_list
         ]
         assert "probe_start" in fired_events
+
+    def test_probe_refusal_never_energizes_plug(self):
+        """If start_probe refuses (relay guardrail), the watcher must not turn
+        the plug on — refusal falls back to the pessimistic start time (F3)."""
+        profile = _calibrated_profile()
+        target = t(8 * 3600)
+        watcher, coordinator, hass = _make_watcher(
+            profile=profile, target_finish_time=target
+        )
+        coordinator.set_mode(ChargeMode.CHARGE_TO_TARGET)
+        watcher.set_target_finish_time(target)
+        run(watcher._do_tick(80.0, T0))
+        assert coordinator.session_state == SessionState.WAITING_FOR_SCHEDULE
+
+        # Force a refusal regardless of guardrail state.
+        coordinator.start_probe = lambda now: False
+
+        pt = watcher._probe_time()
+        run(watcher._do_tick(80.0, pt))
+        assert coordinator.session_state == SessionState.WAITING_FOR_SCHEDULE
+        # No turn_on dispatched, no probe_start event; refusal event fired instead.
+        assert hass.services.async_call.await_count == 0
+        fired = [c[0][1]["event"] for c in hass.bus.async_fire.call_args_list]
+        assert "probe_start" not in fired
+        assert "probe_result" in fired
 
     def test_probe_fires_only_once_per_cycle(self):
         """_probe_fired flag prevents re-triggering on subsequent ticks."""

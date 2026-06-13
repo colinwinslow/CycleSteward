@@ -152,6 +152,10 @@ def test_F_morning_reset_clears_mode(uncalibrated_profile: CalibrationProfile) -
 
     coordinator.set_mode(ChargeMode.CHARGE_TO_TARGET)
 
+    # Arming tick before the boundary (a fresh controller's first tick never
+    # fires the reset — review finding F4).
+    coordinator.tick(70.0, None, datetime(2026, 1, 1, 5, 55, 0, tzinfo=timezone.utc))
+
     reset_time = datetime(2026, 1, 1, 6, 1, 0, tzinfo=timezone.utc)
     result = coordinator.tick(70.0, None, reset_time)
 

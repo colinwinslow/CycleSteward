@@ -165,7 +165,13 @@ product" status.
 
 ## Resolution
 
-Open. Queue in STATUS.md reorganized 2026-06-12 to sequence: core correctness
-fixes (F2/F3/F4/F6) → config-entry plumbing (F1) → stale-meter guardrail (F5)
-→ real-HA smoke test → probe CC/CV disambiguation (F7) → manual-override
-semantics (F8, needs a small ADR or spec note first).
+Partially resolved. Queue in STATUS.md reorganized 2026-06-12 to sequence:
+core correctness fixes (F2/F3/F4/F6) → config-entry plumbing (F1) →
+stale-meter guardrail (F5) → real-HA smoke test → probe CC/CV disambiguation
+(F7) → manual-override semantics (F8, needs a small ADR or spec note first).
+
+**F2/F3/F4/F6 fixed 2026-06-12** in the core-correctness-fixes packet (probe
+Wh/relay persistence into CHARGING, probe relay ops through the guardrail
+evaluator with refusal honored by the watcher, morning-reset first-tick
+arming, trusted-only duration observations). F1, F5, F7, F8, F9, F10 remain
+open.

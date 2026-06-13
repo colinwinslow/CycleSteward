@@ -365,6 +365,33 @@ class TestScenarioD:
         assert mean > 0
         assert unc == pytest.approx(0.2 * mean, rel=1e-3)
 
+    def test_estimated_duration_excludes_untrusted_observations(self):
+        """Untrusted (interrupted/distrusted) sessions must not pollute the
+        duration estimate that drives probe timing (review finding F6)."""
+        from datetime import datetime, timezone
+
+        from cyclesteward.calibration import FullObservation
+
+        profile = CalibrationProfile(
+            charger_label="c", battery_label="b", meter_id="m"
+        )
+        ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        profile.full_observations.append(
+            FullObservation(
+                timestamp=ts, active_wh=400.0, watts_at_low=65.0,
+                watts_at_transition=130.0, trusted=True, elapsed_seconds=3600.0,
+            )
+        )
+        profile.full_observations.append(
+            FullObservation(
+                timestamp=ts, active_wh=120.0, watts_at_low=65.0,
+                watts_at_transition=130.0, trusted=False, elapsed_seconds=90000.0,
+            )
+        )
+        assert profile.elapsed_seconds == [3600.0]
+        mean, unc = profile.estimated_duration_s()
+        assert mean == pytest.approx(3600.0)
+
     def test_estimated_duration_s_stddev_with_three_observations(self):
         """With ≥3 observations, uncertainty uses stddev, not fixed 20%."""
         profile = CalibrationProfile(

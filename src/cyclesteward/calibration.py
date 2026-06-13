@@ -305,7 +305,7 @@ class CalibrationProfile:
         return [
             o.elapsed_seconds
             for o in self.full_observations
-            if o.elapsed_seconds is not None
+            if o.elapsed_seconds is not None and o.trusted
         ]
 
     def estimated_duration_s(

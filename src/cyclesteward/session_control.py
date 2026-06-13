@@ -9,7 +9,7 @@ has no Home Assistant imports.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -195,23 +195,40 @@ class SessionController:
     def start_probe(self, now: datetime) -> bool:
         """Begin a SoC-estimation probe (ADR-0012 decision B).
 
-        Transitions WAITING_FOR_SCHEDULE → PROBING and issues TURN_ON.
-        Returns True if the transition happened, False if the state was wrong.
+        Transitions WAITING_FOR_SCHEDULE → PROBING and issues TURN_ON.  The
+        energization is recorded as a relay transition so probe cycles count
+        toward the chatter guardrail; a probe is refused (returns False) when
+        the relay guardrail would suppress the toggle.
+        Returns True if the transition happened, False otherwise.
         """
         if self._state != SessionState.WAITING_FOR_SCHEDULE:
             return False
+        relay_guard = self._guardrails.check_relay(True, now)
+        if relay_guard is not None:
+            self.event_log.append(
+                f"guardrail/{relay_guard.fault.value}: probe refused: {relay_guard.reason}"
+            )
+            return False
+        self._guardrails.on_turn_on_committed(now)
         self._state = SessionState.PROBING
         self._probe_start = now
         return True
 
-    def end_probe(self) -> bool:
+    def end_probe(self, now: Optional[datetime] = None) -> bool:
         """Conclude an active probe and return to WAITING_FOR_SCHEDULE.
 
         Called by the adapter when a usable wattage reading has been obtained
-        or the probe is being abandoned.  Returns True if a transition happened.
+        or the probe is being abandoned.  Pass ``now`` when the adapter is
+        dispatching a TURN_OFF so the command-confirmation guardrail arms for
+        the probe's off command (ADR-0012 B: probes share the guardrail path).
+        Returns True if a transition happened.
         """
         if self._state != SessionState.PROBING:
             return False
+        # Probe TURN_OFFs intentionally bypass check_relay: a probe must never
+        # be left energized because the chatter guardrail would suppress its off.
+        if now is not None:
+            self._guardrails.on_turn_off_committed(now)
         self._state = SessionState.WAITING_FOR_SCHEDULE
         self._probe_start = None
         return True
@@ -237,6 +254,14 @@ class SessionController:
         The controller defaults safely on missing readings (hold, no cutoff misfire).
         """
         # 1. Morning reset: once per day past the configured time, clear mode → IDLE.
+        #    A fresh controller (e.g. after an HA restart) arms on its first tick
+        #    instead of firing: treating "never reset" as "reset due" would clear
+        #    a just-set mode any evening the controller starts past reset time.
+        if self._last_morning_reset is None:
+            today_reset = self._today_reset_dt(now)
+            self._last_morning_reset = (
+                today_reset if now >= today_reset else today_reset - timedelta(days=1)
+            )
         if self._should_morning_reset(now):
             self._last_morning_reset = self._today_reset_dt(now)
             if self._state != SessionState.FAULTED:
@@ -297,6 +322,7 @@ class SessionController:
                 and (now - self._probe_start).total_seconds()
                 >= self._config.max_probe_seconds
             ):
+                self._guardrails.on_turn_off_committed(now)
                 self._state = SessionState.WAITING_FOR_SCHEDULE
                 self._probe_start = None
                 soc_est = (
@@ -342,7 +368,7 @@ class SessionController:
             if gate is not None:
                 return gate
 
-        # 7. Schedule check: if an active mode is set and we are not yet charging,
+        # 8. Schedule check: if an active mode is set and we are not yet charging,
         #    check whether to wait or start.
         if self._state in (SessionState.IDLE, SessionState.WAITING_FOR_SCHEDULE):
             # ADR-0012 D: computed_start_time (adapter-derived datetime) takes
@@ -368,7 +394,7 @@ class SessionController:
                 SessionAction.TURN_ON, SessionState.CHARGING, None, "starting charge"
             )
 
-        # 8. Charging: run guardrails, then evaluate the cutoff for the active mode.
+        # 9. Charging: run guardrails, then evaluate the cutoff for the active mode.
         if self._state == SessionState.CHARGING:
             idle_w = self._profile.idle_power_w or 0.0
             self._guardrails.accumulate(power_w, idle_w, now)

@@ -226,6 +226,10 @@ def test_scenario_D_after_reset_no_charging():
     ctrl = SessionController(_calibrated_profile(), config)
     ctrl.set_mode(ChargeMode.CHARGE_TO_TARGET)
 
+    # Arming tick before the boundary (a fresh controller's first tick never
+    # fires the reset — review finding F4).
+    ctrl.tick(80.0, None, datetime(2026, 1, 11, 5, 55, 0, tzinfo=timezone.utc))
+
     morning = datetime(2026, 1, 11, 6, 0, 0, tzinfo=timezone.utc)
     ctrl.tick(80.0, None, morning)  # fires reset
     r = ctrl.tick(80.0, None, morning.replace(minute=5))
@@ -239,6 +243,9 @@ def test_scenario_D_morning_reset_fires_once_per_day():
     ctrl = SessionController(_calibrated_profile(), config)
     ctrl.set_mode(ChargeMode.CHARGE_TO_TARGET)
 
+    # Arming tick before the boundary (review finding F4).
+    ctrl.tick(80.0, None, datetime(2026, 1, 11, 5, 55, 0, tzinfo=timezone.utc))
+
     morning = datetime(2026, 1, 11, 6, 0, 0, tzinfo=timezone.utc)
     r1 = ctrl.tick(80.0, None, morning)
     assert "morning reset" in r1.reason
@@ -248,6 +255,38 @@ def test_scenario_D_morning_reset_fires_once_per_day():
     r2 = ctrl.tick(80.0, None, morning.replace(minute=10))
     assert "morning reset" not in r2.reason
     assert r2.action == SessionAction.TURN_ON
+
+
+def test_scenario_D_fresh_controller_first_tick_does_not_clear_mode():
+    """A fresh controller's first tick past the reset time must NOT fire the reset.
+
+    Regression for review finding F4: after an HA restart in the evening, the
+    first tick used to clear a just-set mode because _last_morning_reset was
+    None and 'now' was already past today's reset time.
+    """
+    config = SessionConfig(morning_reset_time=time(6, 0))
+    ctrl = SessionController(_calibrated_profile(), config)
+    ctrl.set_mode(ChargeMode.CHARGE_TO_TARGET)
+
+    evening = datetime(2026, 1, 10, 22, 0, 0, tzinfo=timezone.utc)
+    r = ctrl.tick(80.0, None, evening)
+    assert "morning reset" not in r.reason
+    assert ctrl.mode == ChargeMode.CHARGE_TO_TARGET
+
+
+def test_scenario_D_fresh_controller_still_resets_next_morning():
+    """The first-tick arming must not suppress the genuine next-morning reset."""
+    config = SessionConfig(morning_reset_time=time(6, 0))
+    ctrl = SessionController(_calibrated_profile(), config)
+    ctrl.set_mode(ChargeMode.CHARGE_TO_TARGET)
+
+    evening = datetime(2026, 1, 10, 22, 0, 0, tzinfo=timezone.utc)
+    ctrl.tick(80.0, None, evening)
+
+    next_morning = datetime(2026, 1, 11, 6, 0, 0, tzinfo=timezone.utc)
+    r = ctrl.tick(80.0, None, next_morning)
+    assert "morning reset" in r.reason
+    assert ctrl.mode == ChargeMode.OFF
 
 
 # ── Scenario E: manual override still honors the cutoff ──────────────────────

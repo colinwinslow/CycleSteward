@@ -126,5 +126,16 @@ tests/test_finish_time_scheduling.py::TestScenarioFWaitingTransition::test_sessi
 
 0 invariant violations. 3 concerns addressed:
 1. Energy accumulation during PROBING — `_guardrails.accumulate()` called in PROBING tick (verified by `test_probing_accumulates_wh_for_energy_guardrail`)
+
+   **Correction (2026-06-12 review, finding F2):** as originally shipped, probe
+   Wh was accumulated during PROBING but *discarded* when CHARGING began —
+   `on_charging_started` zeroed `active_wh`, so the invariant-7 claim above was
+   overstated; the test only asserted mid-probe accumulation. Fixed in the
+   correctness-fixes packet: `on_charging_started` no longer zeroes energy or
+   relay history (per-session zeroing lives in `reset()`), probe relay
+   operations are recorded against the chatter guardrail, and the probe
+   TURN_OFF arms command confirmation. The strengthened test now asserts the
+   end-to-end property (probe Wh retained after the WAITING → CHARGING
+   transition); see also `TestProbeRelayGuardrails`.
 2. Uncertainty propagated in `probe_result` event — `uncertainty_pct` added to logbook event payload
 3. Overrun fires only once — `_overrun_fired` flag added (verified by `test_overrun_fires_only_once_per_session`)
