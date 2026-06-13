@@ -7,7 +7,7 @@
 
 ---
 
-## Raw pytest output (39 tests, 0 failures)
+## Raw pytest output (44 tests, 0 failures; re-run 2026-06-12 after the core-correctness-fixes packet strengthened/added probe guardrail tests)
 
 ```
 ============================= test session starts ==============================
@@ -23,6 +23,10 @@ tests/test_finish_time_scheduling.py::TestProbingState::test_probing_tick_return
 tests/test_finish_time_scheduling.py::TestProbingState::test_probing_tick_timeout_returns_to_waiting PASSED
 tests/test_finish_time_scheduling.py::TestProbingState::test_probing_accumulates_wh_for_energy_guardrail PASSED
 tests/test_finish_time_scheduling.py::TestProbingState::test_probing_tick_with_no_power_stays_probing PASSED
+tests/test_finish_time_scheduling.py::TestProbeRelayGuardrails::test_probe_relay_transitions_counted PASSED
+tests/test_finish_time_scheduling.py::TestProbeRelayGuardrails::test_probe_timeout_turn_off_arms_command_confirmation PASSED
+tests/test_finish_time_scheduling.py::TestProbeRelayGuardrails::test_end_probe_with_now_arms_command_confirmation PASSED
+tests/test_finish_time_scheduling.py::TestProbeRelayGuardrails::test_end_probe_confirmation_clears_when_plug_reports_off PASSED
 tests/test_finish_time_scheduling.py::TestComputedStartTime::test_waiting_when_before_computed_start PASSED
 tests/test_finish_time_scheduling.py::TestComputedStartTime::test_charging_when_at_computed_start PASSED
 tests/test_finish_time_scheduling.py::TestComputedStartTime::test_computed_start_takes_precedence_over_scheduled_start PASSED
@@ -36,6 +40,7 @@ tests/test_finish_time_scheduling.py::TestLogbookEventHelper::test_fire_event_in
 tests/test_finish_time_scheduling.py::TestProbeScheduling::test_pessimistic_start_time_with_no_observations PASSED
 tests/test_finish_time_scheduling.py::TestProbeScheduling::test_probe_time_is_pessimistic_start_minus_headroom PASSED
 tests/test_finish_time_scheduling.py::TestProbeScheduling::test_probe_fires_when_clock_reaches_probe_time PASSED
+tests/test_finish_time_scheduling.py::TestProbeScheduling::test_probe_refusal_never_energizes_plug PASSED
 tests/test_finish_time_scheduling.py::TestProbeScheduling::test_probe_fires_only_once_per_cycle PASSED
 tests/test_finish_time_scheduling.py::TestProbeScheduling::test_probe_timeout_fires_probe_result_with_failure PASSED
 tests/test_finish_time_scheduling.py::TestProbeScheduling::test_no_target_finish_time_no_probe PASSED
@@ -53,8 +58,7 @@ tests/test_finish_time_scheduling.py::TestScenarioDSessionReason::test_idle_reas
 tests/test_finish_time_scheduling.py::TestScenarioFWaitingTransition::test_stays_waiting_before_computed_start PASSED
 tests/test_finish_time_scheduling.py::TestScenarioFWaitingTransition::test_transitions_to_charging_at_computed_start PASSED
 tests/test_finish_time_scheduling.py::TestScenarioFWaitingTransition::test_session_start_event_fired_on_charging_transition PASSED
-
-============================== 39 passed in 0.09s ==============================
+============================== 44 passed in 0.05s ==============================
 ```
 
 ---
