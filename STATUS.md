@@ -1,8 +1,8 @@
 # STATUS.md
 
-**Last updated:** 2026-06-12 (finish-time scheduling done: PROBING state, computed_start_time, session_reason, probe scheduling, logbook events, overrun detection, 39 new tests (233 total), BDD A–F evidence, arch + BDD reviews OK)
+**Last updated:** 2026-06-12 (full-codebase review: findings F1–F10 in `docs/research/codebase-review.md`; queue reordered — correctness fixes first, then config-entry plumbing, then stale-meter + real-HA smoke test)
 **Phase:** Phase 2 - HA adapter
-**Next bounded packet:** TBD — setup-flow / config-entry UX, or config-entry plumbing for target_finish_time and margin_s.
+**Next bounded packet:** Core correctness fixes (review findings F2/F3/F4/F6) — see "Queued packets" below. Proof: a regression test per finding asserting the *end-to-end* property (e.g. probe Wh retained after CHARGING entry, not just accumulated during PROBING), plus existing 233 green.
 **Current readiness:** READY-FOR-NEXT-PACKET
 
 ## Recent sessions (rolling, last 5)
@@ -111,6 +111,36 @@
 - [x] Emit a profile-summary JSON artifact (anchors + active Wh + landmarks) and read it back in evidence.
 - [x] Produce BDD evidence for `bdd/anchor/fixture-analyzer-anchor-bdd.md`.
 
+## Queued packets (ordered; from 2026-06-12 review, `docs/research/codebase-review.md`)
+
+1. **Core correctness fixes (F2/F3/F4/F6).** Probe-Wh retention across CHARGING
+   entry (F2, verified bug); probe relay ops routed through the guardrail
+   evaluator so command-confirmation arms and cycles count (F3); morning-reset
+   no longer fires on the first tick of a fresh controller (F4, verified bug);
+   `elapsed_seconds` filters to trusted observations (F6). Also correct the
+   overstated invariant-7 claim in the finish-time-scheduling BDD evidence.
+2. **Config-entry plumbing (F1).** Config flow collects `power_entity_id`,
+   `plug_entity_id`, `temp_entity_id` (entity selectors), target SoC, margin_s;
+   `target_finish_time` time entity wired to `watcher.set_target_finish_time()`
+   with time-of-day → next-occurrence aware-datetime conversion; morning-reset
+   entity round-trips to `SessionConfig`; register the 5 declared services (or
+   trim `services.yaml` to what exists); decide timezone discipline. Without
+   this packet the integration is inert in a real install.
+3. **Stale-meter guardrail (F5; invariant 7).** Watcher tracks last
+   power-update age, passes `None` when stale; optional fault on prolonged
+   staleness while CHARGING.
+4. **Real-HA smoke test.** Run the integration in a dev HA instance (or at
+   minimum hassfest + config-flow exercise); the single biggest untested
+   surface is HA itself — all current evidence is against mocks.
+5. **Probe CC/CV disambiguation (F7).** Use the wattage trend across the probe
+   window to distinguish CC (rising/flat) from CV taper (falling ⇒ near-full);
+   also latch `soc_estimate` at session max once taper is detected so the
+   display doesn't count down during charge-to-full.
+6. **Manual-override semantics (F8).** Needs a small ADR/spec note first:
+   what the switch means, whether it dispatches TURN_ON, and detection of
+   external plug-on so cutoff + guardrails apply (ADR-0009 promise).
+7. **Setup-flow / config-entry UX** (the larger wizard; builds on packet 2).
+
 ## Open queue (non-blocking)
 
 - (a) Decide the Home Assistant domain slug (name resolved: CycleSteward; `docs/research/naming.md`).
@@ -120,6 +150,9 @@
 - (c) Research how often users should be prompted for full calibration/balancing charges.
 - (d) Decide default probe cadence and relay-cycle limits for low-battery detection.
 - (e) Grow the charge-session fixture library further (seeded: clean/noisy/interrupted/malformed/unknown synthetics + one real Swoop ASM session; want more real sessions at varied temperatures and a full taper-to-completion session).
+- (h) Anchor aggregation + drift detection (F9): trusted full sessions currently overwrite anchors wholesale; aggregate across `full_observations` instead (ADR-0007 territory).
+- (i) Replace the `"taper floor" in session_reason` string match with a structured `TickResult` field (F10).
+- (j) Probe remaining-time model is linear in SoC; revisit with curve integration once real taper fixtures exist (ADR-0012 deferred item).
 
 ## Blockers
 
