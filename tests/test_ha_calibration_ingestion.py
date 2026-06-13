@@ -174,6 +174,18 @@ class TestScenarioA:
         saved_profile = store_mock.async_save.call_args[0][0]
         assert len(saved_profile.full_observations) == 1
 
+    def test_observation_timestamp_is_trace_derived(self):
+        """The stored observation timestamp is the trace's last sample time,
+        not wall-clock now — keeps anchor artifacts byte-stable and records
+        when the session actually ended."""
+        profile = CalibrationProfile(
+            charger_label="test-charger", battery_label="test-battery", meter_id="test-meter"
+        )
+        coordinator = CyclestewardCoordinator(profile)
+        trace = _near_empty_to_taper_trace(n_cc=5, interval_s=600)
+        updated = coordinator.ingest_from_trace(trace)
+        assert updated.full_observations[0].timestamp == trace[-1][0]
+
     def test_elapsed_seconds_recorded(self):
         # Use uncalibrated profile so any taper-floor completion qualifies as full
         # (first-calibration path; no proximity check needed).

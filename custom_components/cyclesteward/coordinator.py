@@ -206,6 +206,10 @@ class CyclestewardCoordinator:
         elapsed_s = (
             (trace[-1][0] - trace[0][0]).total_seconds() if len(trace) > 1 else None
         )
+        # Observation timestamp = session end from the trace itself, not
+        # wall-clock now: correct metadata for a historical trace, and keeps
+        # the JSON anchor artifact byte-stable for a given fixture.
+        session_end = trace[-1][0]
         summary = analyze(
             samples,
             profile_id=profile.meter_id,
@@ -215,14 +219,17 @@ class CyclestewardCoordinator:
         if profile.watts_at_low is None:
             # First calibration — no anchor to compare against.
             profile.ingest_full_session(
-                summary, elapsed_seconds=elapsed_s, session_temp_c=session_temp_c
+                summary,
+                elapsed_seconds=elapsed_s,
+                session_temp_c=session_temp_c,
+                timestamp=session_end,
             )
             return profile
 
         session_wal = summary.anchors.watts_at_low
         if session_wal is None:
             # Analyzer couldn't extract a CC-start wattage — can't confirm near-empty.
-            profile.ingest_partial_session(summary)
+            profile.ingest_partial_session(summary, timestamp=session_end)
             return profile
 
         # Temperature-corrected proximity check.
@@ -240,10 +247,13 @@ class CyclestewardCoordinator:
 
         if abs(corrected_wal - anchor_w) / anchor_w <= proximity_frac:
             profile.ingest_full_session(
-                summary, elapsed_seconds=elapsed_s, session_temp_c=session_temp_c
+                summary,
+                elapsed_seconds=elapsed_s,
+                session_temp_c=session_temp_c,
+                timestamp=session_end,
             )
         else:
-            profile.ingest_partial_session(summary)
+            profile.ingest_partial_session(summary, timestamp=session_end)
 
         return profile
 
