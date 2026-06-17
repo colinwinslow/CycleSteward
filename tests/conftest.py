@@ -1,10 +1,20 @@
-"""Shared test fixtures: paths to the charge-session CSV library."""
+"""Shared test fixtures: paths to the charge-session CSV library.
+
+Also installs lightweight Home Assistant + voluptuous stubs (see ha_stubs) at
+collection time so the adapter modules that import HA framework symbols
+(config_flow, time, services) load offline.  Modules that defer HA imports are
+unaffected.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
+
+import ha_stubs
+
+ha_stubs.install()
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES_DIR = REPO_ROOT / "fixtures"

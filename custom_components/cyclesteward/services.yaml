@@ -38,40 +38,9 @@ manual_override:
       selector:
         boolean:
 
-start_calibration_session:
-  name: Start calibration session
-  description: >
-    Start a guided full calibration charge.  Errors if a session is already
-    active.
-  fields:
-    entry_id:
-      name: Config entry ID
-      required: true
-      selector:
-        text:
-    soc_report:
-      name: SoC report
-      description: Optional coarse SoC at charge start (e.g. "0 of 5 dots").
-      required: false
-      selector:
-        text:
-
-import_history:
-  name: Import history CSV
-  description: >
-    Import a Home Assistant history CSV for calibration (ADR-0010).  Blocked
-    while a session is active.
-  fields:
-    entry_id:
-      name: Config entry ID
-      required: true
-      selector:
-        text:
-    csv_path:
-      name: CSV path
-      required: true
-      selector:
-        text:
+# start_calibration_session and import_history are intentionally omitted: this
+# slice registers only services with a working coordinator path (spec D2).  They
+# return with their feature slices so no declared-but-unregistered service ships.
 
 acknowledge_fault:
   name: Acknowledge fault

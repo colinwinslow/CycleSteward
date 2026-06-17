@@ -2,7 +2,8 @@
 
 ## Status
 
-Draft. Paired with [docs/specs/config-entry-plumbing.md](../../docs/specs/config-entry-plumbing.md).
+Implemented 2026-06-16. Paired with [docs/specs/config-entry-plumbing.md](../../docs/specs/config-entry-plumbing.md).
+Evidence: [config-entry-plumbing-evidence.md](config-entry-plumbing-evidence.md).
 
 ## Why this BDD exists
 

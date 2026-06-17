@@ -120,6 +120,19 @@ class CyclestewardCoordinator:
         self._controller.set_mode(mode)
         self._notify()
 
+    def set_morning_reset_time(self, value) -> None:
+        """Round-trip a morning-reset time-of-day into SessionConfig (ADR-0009).
+
+        ``value`` is a ``datetime.time``.  The controller picks it up on the next
+        tick's arming check; no state reset, no immediate notify-worthy change.
+        """
+        self._controller.set_morning_reset_time(value)
+
+    @property
+    def morning_reset_time(self):
+        """Current daily morning-reset time-of-day (``datetime.time``)."""
+        return self._controller.morning_reset_time
+
     def manual_override_on(self) -> None:
         self._controller.manual_override_on()
         self._notify()

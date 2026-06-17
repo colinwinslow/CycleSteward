@@ -1,7 +1,18 @@
 """target_finish_time and morning_reset_time TimeEntities (ADR-0011, ADR-0012).
 
-Stubs for the first adapter slice.  The full scheduling logic (derived
-start-time algorithm from ADR-0012) is wired in the scheduling slice.
+Setting either entity now changes behavior:
+
+- ``TargetFinishTimeEntity`` converts the time-of-day to the next occurrence as a
+  timezone-aware datetime (``homeassistant.util.dt`` is the tz authority) and
+  calls ``watcher.set_target_finish_time()``, which recomputes the pessimistic
+  start time and resets per-cycle probe/overrun state.
+- ``MorningResetTimeEntity`` round-trips the time-of-day into
+  ``SessionConfig.morning_reset_time`` via ``coordinator.set_morning_reset_time()``.
+
+The watcher and coordinator are reached lazily via ``hass.data[DOMAIN]`` keyed by
+``entry_id`` (spec D1) because the watcher is created after platform setup.  The
+initial schedule is applied once in ``__init__.async_setup_entry`` so a fresh
+install is live without a manual edit.
 """
 
 from __future__ import annotations
@@ -12,12 +23,23 @@ from homeassistant.components.time import TimeEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import (
+    DEFAULT_MORNING_RESET_HOUR,
+    DEFAULT_MORNING_RESET_MINUTE,
+    DEFAULT_TARGET_FINISH_HOUR,
+    DEFAULT_TARGET_FINISH_MINUTE,
+    DOMAIN,
+)
 from .coordinator import CyclestewardCoordinator
+from .schedule import next_occurrence
 
-_DEFAULT_FINISH = time(7, 0)
-_DEFAULT_MORNING_RESET = time(6, 0)
+_DEFAULT_FINISH = time(DEFAULT_TARGET_FINISH_HOUR, DEFAULT_TARGET_FINISH_MINUTE)
+_DEFAULT_MORNING_RESET = time(
+    DEFAULT_MORNING_RESET_HOUR, DEFAULT_MORNING_RESET_MINUTE
+)
+_WATCHER_KEY = "watcher"
 
 
 async def async_setup_entry(
@@ -28,8 +50,8 @@ async def async_setup_entry(
     coordinator: CyclestewardCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities(
         [
-            TargetFinishTimeEntity(coordinator, entry),
-            MorningResetTimeEntity(coordinator, entry),
+            TargetFinishTimeEntity(hass, coordinator, entry),
+            MorningResetTimeEntity(hass, coordinator, entry),
         ]
     )
 
@@ -42,13 +64,15 @@ class TargetFinishTimeEntity(TimeEntity):
     _attr_icon = "mdi:clock-check-outline"
 
     def __init__(
-        self, coordinator: CyclestewardCoordinator, entry: ConfigEntry
+        self,
+        hass: HomeAssistant,
+        coordinator: CyclestewardCoordinator,
+        entry: ConfigEntry,
     ) -> None:
+        self._hass = hass
         self._coordinator = coordinator
+        self._entry_id = entry.entry_id
         self._attr_unique_id = f"{entry.entry_id}_target_finish_time"
-        # TODO(scheduling-slice): replace _value with a read from SessionConfig /
-        # coordinator once target_finish_time is wired into coordinator.tick()
-        # as computed_start_time (ADR-0012 D).
         self._value: time = entry.data.get("target_finish_time", _DEFAULT_FINISH)
 
     @property
@@ -57,6 +81,11 @@ class TargetFinishTimeEntity(TimeEntity):
 
     async def async_set_value(self, value: time) -> None:
         self._value = value
+        watcher = self._hass.data.get(DOMAIN, {}).get(
+            f"{self._entry_id}.{_WATCHER_KEY}"
+        )
+        if watcher is not None:
+            watcher.set_target_finish_time(next_occurrence(value, dt_util.now()))
         self.async_write_ha_state()
 
 
@@ -68,13 +97,18 @@ class MorningResetTimeEntity(TimeEntity):
     _attr_icon = "mdi:clock-start"
 
     def __init__(
-        self, coordinator: CyclestewardCoordinator, entry: ConfigEntry
+        self,
+        hass: HomeAssistant,
+        coordinator: CyclestewardCoordinator,
+        entry: ConfigEntry,
     ) -> None:
+        self._hass = hass
         self._coordinator = coordinator
+        self._entry_id = entry.entry_id
         self._attr_unique_id = f"{entry.entry_id}_morning_reset_time"
-        # TODO(scheduling-slice): round-trip through SessionConfig.morning_reset_time
-        # once the coordinator exposes a mutable config handle.
-        self._value: time = entry.data.get("morning_reset_time", _DEFAULT_MORNING_RESET)
+        self._value: time = entry.data.get(
+            "morning_reset_time", _DEFAULT_MORNING_RESET
+        )
 
     @property
     def native_value(self) -> time:
@@ -82,4 +116,5 @@ class MorningResetTimeEntity(TimeEntity):
 
     async def async_set_value(self, value: time) -> None:
         self._value = value
+        self._coordinator.set_morning_reset_time(value)
         self.async_write_ha_state()

@@ -32,10 +32,10 @@ if TYPE_CHECKING:
 
 from cyclesteward.session_control import ChargeMode, SessionAction, SessionState
 
+from .const import DEFAULT_MARGIN_S as _DEFAULT_MARGIN_S
 from .coordinator import CyclestewardCoordinator
 
-# ADR-0012 C default margin and fixed probe headroom.
-_DEFAULT_MARGIN_S = 1800.0   # 30 min
+# ADR-0012 C fixed probe headroom (margin default lives in const.py).
 _PROBE_HEADROOM_S = 600.0    # 10 min fixed
 
 

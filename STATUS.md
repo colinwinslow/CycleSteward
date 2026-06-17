@@ -1,18 +1,28 @@
 # STATUS.md
 
-**Last updated:** 2026-06-16 (config-entry-plumbing spec + BDD scaffolded for packet 2; D1/D2/D3 decisions resolved and written into the spec; no code yet)
+**Last updated:** 2026-06-16 (config-entry-plumbing implemented — packet 2/F1 done; config flow, time entities, services wired; 24 new tests; reviews OK)
 **Phase:** Phase 2 - HA adapter
-**Next bounded packet:** Config-entry plumbing (review finding F1) — queued packet 2 below. Spec + BDD now exist (`docs/specs/config-entry-plumbing.md`, draft). Proof: config flow collects entity IDs; watcher starts in a simulated entry-setup test; time entities round-trip to watcher/config; services registered or trimmed. Decisions: keep 3 services (set_mode/manual_override/acknowledge_fault), trim 2; `homeassistant.util.dt` + next-occurrence rule; `hass.data[DOMAIN]` entity→watcher path.
-**Current readiness:** READY-FOR-NEXT-PACKET (spec drafted; implementation not started)
+**Next bounded packet:** Stale-meter guardrail (F5; invariant 7) — queued packet 3 below. Watcher tracks last power-update age, passes `None` when stale; optional fault on prolonged staleness while CHARGING. No spec yet.
+**Current readiness:** READY-FOR-NEXT-PACKET (packet 2 complete, verified, reviewed)
 
 ## Recent sessions (rolling, last 5)
 
+- **2026-06-16** - Config-entry plumbing implemented (packet 2 / review F1; `docs/specs/config-entry-plumbing.md` now `implemented`). Wired the three dead seams: (1) `config_flow.py` collects `power/plug/temp_entity_id` entity selectors + `target_soc_dots` + `margin_s`; (2) `time.py` `TargetFinishTimeEntity`/`MorningResetTimeEntity` now round-trip into `watcher.set_target_finish_time()` (via pure `schedule.next_occurrence`) and `coordinator.set_morning_reset_time()`, reached via `hass.data[DOMAIN]` (D1); (3) `services.py` registers `set_mode`/`manual_override`/`acknowledge_fault` (deferred HA imports), `services.yaml` trimmed to those 3 (D2). `__init__.async_setup_entry` threads `margin_s`, applies the configured target-finish + morning-reset at setup, registers/unregisters services. New pure `schedule.py` (`next_occurrence`, tz-aware via `dt_util`, D3). New `SessionController.set_morning_reset_time` + `morning_reset_time` getter; coordinator delegates. Test harness `tests/ha_stubs.py` stubs HA + voluptuous session-wide (conftest) so the real adapter modules run offline. 24 new tests (266 total), ruff clean. Anchor: `bdd/ha-adapter/config-entry-plumbing-trace.json`; BDD A–G evidence. Arch review OK (0 violations; applied: controller public getter so adapter stops touching `_config`). BDD-evidence review OK (pinned exact listener count + computed_start_time in the anchor `expected` block + test, added run date).
 - **2026-06-16** - Scaffolded `docs/specs/config-entry-plumbing.md` + `bdd/ha-adapter/config-entry-plumbing-bdd.md` (scenarios A–G) for queued packet 2 (F1). Grounded the spec in the actual dead seams: config-flow stub never collects `power/plug/temp_entity_id` (so the watcher never starts → integration inert), time entities are local stubs that never reach watcher/SessionConfig, and `services.yaml` declares 5 services with zero registered. Resolved 3 embedded decisions and wrote them into the spec: D2 keep 3 backed services + trim `start_calibration_session`/`import_history`; D3 `homeassistant.util.dt` + next-occurrence; D1 `hass.data[DOMAIN]` lookup. No code changed; spec is draft, implementation not started.
 - **2026-06-12** - Full-codebase review (findings F1–F10, `docs/research/codebase-review.md`) + core correctness fixes packet (F2/F3/F4/F6). F2: `on_charging_started` no longer zeroes `active_wh`/relay history — probe Wh and cycles persist into CHARGING (verified bug; 1.467 Wh was being wiped). F3: `start_probe` records relay transition + refuses on chatter suppression; `end_probe(now)` and probe-timeout arm command confirmation; watcher honors refusal (arch-review catch: never energize on refusal) and passes `now` to `end_probe`. F4: morning reset arms on a fresh controller's first tick instead of firing (restart race; verified bug). F6: `elapsed_seconds` filters to trusted observations. BDD evidence correction note added to finish-time-scheduling evidence. 8 new/strengthened tests (241 total), ruff clean. Arch review: 1 invariant-7 gap found and fixed, 3 recommendations applied. Follow-up: `ingest_from_trace` observation timestamp now trace-derived (was wall-clock `now`; made the ha-calibration-ingestion anchor artifact non-deterministic and was wrong metadata for a historical trace; 242 total). Closeout BDD-evidence review: corrections verified honest; stale 39-test raw-output block in finish-time-scheduling evidence refreshed to the 44-test run.
 - **2026-06-12** - Finish-time scheduling done (ADR-0012 decisions B–D). `SessionState.PROBING` + `start_probe`/`end_probe` in `SessionController` and coordinator. `session_reason` on all non-idle states. `computed_start_time` kwarg threaded through `tick()`. `HASensorWatcher` rewritten: `set_target_finish_time()`, `_pessimistic_start_time()`, `_probe_time()`, `_fire_event()` logbook helper; probe fires once per cycle, updates `computed_start_time` on success or falls back to pessimistic on timeout; overrun event fires once per session without faulting; PROBING accumulates Wh for energy guardrail. 39 new tests (233 total), ruff clean. Anchor: `bdd/ha-adapter/finish-time-scheduling-trace.json`. BDD A–F evidence; arch review (0 violations, 3 concerns addressed); BDD review (FAULTED coverage gap closed).
 - **2026-06-09** - HA adapter slice 3 done. `CalibrationProfile`: `elapsed_seconds` field on `FullObservation`, `reference_temp_c` field, `elapsed_seconds` property, `estimated_duration_s()` method (ADR-0012 decision A). `CyclestewardCoordinator.ingest_from_trace()`: converts live trace to Samples, calls `analyze()`, applies temperature-corrected proximity check (full vs. partial decision), calls appropriate ingest method, returns updated profile. `HASensorWatcher._do_tick()`: ingestion trigger on CHARGING→DONE_LATCHED_OFF with "taper floor" reason in CHARGE_TO_FULL mode; awaits `ProfileStore.async_save()`. Research note on non-linear temperature effects added. 20 new tests (194 total), ruff clean. Anchor: `bdd/ha-adapter/ha-calibration-ingestion-trace.json`. BDD A–F evidence; arch review (0 invariant violations, 2 concerns addressed); BDD review (3 concerns addressed: temp-correction proof, silent guard removed, reference_temp assertion hardened).
-- **2026-06-09** - HA adapter slice 2 done. `CalibrationProfile.from_dict/from_json` added to all calibration dataclasses. `ProfileStore` (HA storage wrapper: load/save CalibrationProfile). `HASensorWatcher`: subscribes to HA power/temp state-change events, drives `coordinator.tick()` on each update + 60s keepalive, reads `plug_is_on` from HA state at tick time, dispatches relay TURN_ON/TURN_OFF, accumulates live power trace buffer (clears on CHARGING entry, retained through DONE_LATCHED_OFF for slice 3). `__init__.py` updated: loads profile from store on setup, starts/stops watcher. 34 new tests (174 total), ruff clean. Anchor: `bdd/ha-adapter/ha-adapter-wiring-trace.json`. BDD A–G evidence; arch review (0 violations); BDD review OK.
 ## Active work
+
+### Config-entry plumbing — review F1 (DONE 2026-06-16)
+
+- [x] `config_flow.py`: `power_entity_id`/`plug_entity_id` (required) + `temp_entity_id`/`target_soc_dots`/`margin_s` (optional) entity/number selectors; entry `data` round-trips.
+- [x] `schedule.py`: pure `next_occurrence(tod, now)` (tz-aware, next-occurrence/day-boundary rule; HA injects `dt_util.now()`) — D3.
+- [x] `time.py`: `TargetFinishTimeEntity` → `watcher.set_target_finish_time(next_occurrence(...))`; `MorningResetTimeEntity` → `coordinator.set_morning_reset_time()`; watcher/coordinator reached via `hass.data[DOMAIN]` (D1); no-watcher set is a no-op beyond storing the value.
+- [x] `services.py`: registers `set_mode`/`manual_override`/`acknowledge_fault` (deferred HA imports, idempotent, domain-level); `services.yaml` trimmed to those 3 (D2); `start_calibration_session`/`import_history` removed.
+- [x] `__init__.async_setup_entry`: threads `margin_s` into the watcher, applies configured target-finish + morning-reset at setup, registers services; unregisters on last unload.
+- [x] `SessionController.set_morning_reset_time` + `morning_reset_time` getter; `coordinator` delegates (no `_config` reach-in — arch-review recommendation).
+- [x] Test harness `tests/ha_stubs.py` stubs HA + voluptuous session-wide (conftest) so real adapter modules run offline; 24 new tests (266 total), ruff clean. Anchor `bdd/ha-adapter/config-entry-plumbing-trace.json`; BDD A–G evidence. Arch review OK; BDD-evidence review OK (exact figures pinned in anchor `expected` + test).
 
 ### Core correctness fixes — review F2/F3/F4/F6 (DONE 2026-06-12)
 
@@ -123,13 +133,7 @@
 ## Queued packets (ordered; from 2026-06-12 review, `docs/research/codebase-review.md`)
 
 1. ~~**Core correctness fixes (F2/F3/F4/F6).**~~ DONE 2026-06-12 (see Active work).
-2. **Config-entry plumbing (F1).** Config flow collects `power_entity_id`,
-   `plug_entity_id`, `temp_entity_id` (entity selectors), target SoC, margin_s;
-   `target_finish_time` time entity wired to `watcher.set_target_finish_time()`
-   with time-of-day → next-occurrence aware-datetime conversion; morning-reset
-   entity round-trips to `SessionConfig`; register the 5 declared services (or
-   trim `services.yaml` to what exists); decide timezone discipline. Without
-   this packet the integration is inert in a real install.
+2. ~~**Config-entry plumbing (F1).**~~ DONE 2026-06-16 (see Active work).
 3. **Stale-meter guardrail (F5; invariant 7).** Watcher tracks last
    power-update age, passes `None` when stale; optional fault on prolonged
    staleness while CHARGING.
@@ -157,6 +161,7 @@
 - (h) Anchor aggregation + drift detection (F9): trusted full sessions currently overwrite anchors wholesale; aggregate across `full_observations` instead (ADR-0007 territory).
 - (i) Replace the `"taper floor" in session_reason` string match with a structured `TickResult` field (F10).
 - (j) Probe remaining-time model is linear in SoC; revisit with curve integration once real taper fixtures exist (ADR-0012 deferred item).
+- (k) `target_soc_dots` is collected by the config flow and stored coarsely in `entry.data` but has no runtime consumer yet (arch-review flag, 2026-06-16). A later SoC-target slice must wire it into `SessionConfig.target_soc_pct` via a coarse dots→band mapping (invariant 6 — no silent precise conversion).
 
 ## Blockers
 

@@ -171,6 +171,10 @@ class SessionController:
     def target_wattage(self) -> Optional[float]:
         return self._profile.target_wattage(self._config.target_soc_pct)
 
+    @property
+    def morning_reset_time(self) -> time:
+        return self._config.morning_reset_time
+
     def set_mode(self, mode: ChargeMode) -> None:
         """Set charge mode.  Modes are mutually exclusive; setting one clears the other.
 
@@ -181,6 +185,15 @@ class SessionController:
         self._taper_start = None
         self._heat_delay_start = None
         self._guardrails.reset()
+
+    def set_morning_reset_time(self, value: time) -> None:
+        """Update the daily morning-reset time-of-day (ADR-0009).
+
+        Mutates the live config; the existing arming logic in ``tick()`` reads
+        ``self._config.morning_reset_time`` each tick, so the new value takes
+        effect on the next tick without resetting session state.
+        """
+        self._config.morning_reset_time = value
 
     def manual_override_on(self) -> None:
         """User manually turns the plug on.

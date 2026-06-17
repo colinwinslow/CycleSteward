@@ -1,5 +1,5 @@
 ---
-status: draft
+status: implemented
 date: 2026-06-16
 depends-on-adrs: [0006, 0009, 0011, 0012]
 ---
@@ -8,9 +8,10 @@ depends-on-adrs: [0006, 0009, 0011, 0012]
 
 ## Status
 
-Draft. Defines the contract surface for config-entry plumbing per ADR-0011
-(entity/service surface) and ADR-0012 (derived start time). Closes review
-finding F1 (`docs/research/codebase-review.md`).
+Implemented 2026-06-16. Defines the contract surface for config-entry plumbing
+per ADR-0011 (entity/service surface) and ADR-0012 (derived start time). Closes
+review finding F1 (`docs/research/codebase-review.md`). Evidence:
+[config-entry-plumbing-evidence.md](../../bdd/ha-adapter/config-entry-plumbing-evidence.md).
 
 ## Related docs
 

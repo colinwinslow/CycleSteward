@@ -1,0 +1,28 @@
+{
+  "description": "Simulated config-entry setup trace for the config-entry-plumbing slice (F1). Drives async_setup_entry against a mock hass and proves the integration is no longer inert: the watcher starts, margin_s threads through, the configured target-finish time becomes a tz-aware next-occurrence start time, the morning-reset time round-trips into SessionConfig, and the kept services register and reach the coordinator.",
+  "now": "2026-06-16T08:00:00+00:00",
+  "entry": {
+    "entry_id": "anchor-entry",
+    "data": {
+      "charger_label": "shimano-steps",
+      "battery_label": "btr-e8035",
+      "meter_id": "aqara-plug-1",
+      "rated_capacity_wh": 504.0,
+      "power_entity_id": "sensor.bike_plug_power",
+      "plug_entity_id": "switch.bike_plug",
+      "temp_entity_id": "sensor.garage_temp",
+      "target_soc_dots": 4,
+      "margin_s": 1200,
+      "target_finish_time": "07:30:00",
+      "morning_reset_time": "05:30:00"
+    }
+  },
+  "expected": {
+    "watcher_started": true,
+    "listeners_registered": 3,
+    "margin_s": 1200.0,
+    "target_finish_next_occurrence": "2026-06-17T07:30:00+00:00",
+    "computed_start_time": "2026-06-17T01:34:00+00:00",
+    "morning_reset_time": "05:30:00"
+  }
+}

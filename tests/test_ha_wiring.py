@@ -483,11 +483,17 @@ class TestAsyncSetupEntry:
         profile_store_instance = _make_profile_store(fake_store)
         run(profile_store_instance.async_save(stored_profile))  # saves via to_dict()
 
-        # Fake hass with data dict and async config_entries
+        # Fake hass with data dict, async config_entries, and a services registry
+        # (async_setup_entry now registers domain services).
         hass = SimpleNamespace(
             data={},
             config_entries=SimpleNamespace(
                 async_forward_entry_setups=AsyncMock(return_value=None)
+            ),
+            services=SimpleNamespace(
+                has_service=MagicMock(return_value=False),
+                async_register=MagicMock(),
+                async_remove=MagicMock(),
             ),
         )
 
@@ -524,6 +530,11 @@ class TestAsyncSetupEntry:
             data={},
             config_entries=SimpleNamespace(
                 async_forward_entry_setups=AsyncMock(return_value=None)
+            ),
+            services=SimpleNamespace(
+                has_service=MagicMock(return_value=False),
+                async_register=MagicMock(),
+                async_remove=MagicMock(),
             ),
         )
         entry = SimpleNamespace(

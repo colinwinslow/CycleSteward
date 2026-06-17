@@ -7,6 +7,7 @@ core; this layer owns only HA plumbing.  See ADR-0006.
 
 from __future__ import annotations
 
+from datetime import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -15,12 +16,29 @@ if TYPE_CHECKING:
 
 from cyclesteward.calibration import CalibrationProfile
 
-from .const import DOMAIN, PLATFORMS
+from .const import (
+    DEFAULT_MARGIN_S,
+    DEFAULT_MORNING_RESET_HOUR,
+    DEFAULT_MORNING_RESET_MINUTE,
+    DEFAULT_TARGET_FINISH_HOUR,
+    DEFAULT_TARGET_FINISH_MINUTE,
+    DOMAIN,
+    PLATFORMS,
+)
 from .coordinator import CyclestewardCoordinator
 from .profile_store import ProfileStore
+from .schedule import next_occurrence
+from .services import async_register_services, async_unregister_services
 from .watcher import HASensorWatcher
 
 _WATCHER_KEY = "watcher"
+
+_DEFAULT_TARGET_FINISH = time(
+    DEFAULT_TARGET_FINISH_HOUR, DEFAULT_TARGET_FINISH_MINUTE
+)
+_DEFAULT_MORNING_RESET = time(
+    DEFAULT_MORNING_RESET_HOUR, DEFAULT_MORNING_RESET_MINUTE
+)
 
 
 async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool:
@@ -39,6 +57,14 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
     coordinator = CyclestewardCoordinator(profile)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
+    # Apply the configured morning-reset time so the schedule is live without a
+    # manual edit (spec §2).
+    coordinator.set_morning_reset_time(
+        entry.data.get("morning_reset_time", _DEFAULT_MORNING_RESET)
+    )
+
+    async_register_services(hass)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     power_entity_id = entry.data.get("power_entity_id", "")
@@ -46,6 +72,8 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
     temp_entity_id = entry.data.get("temp_entity_id")
 
     if power_entity_id and plug_entity_id:
+        from homeassistant.util import dt as dt_util
+
         watcher = HASensorWatcher(
             hass,
             coordinator,
@@ -53,6 +81,15 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
             plug_entity_id=plug_entity_id,
             temp_entity_id=temp_entity_id,
             profile_store=store,
+            margin_s=float(entry.data.get("margin_s", DEFAULT_MARGIN_S)),
+        )
+        # Apply the configured target finish time once so the derived start time
+        # is live without a manual edit (spec §2).
+        target_finish_tod = entry.data.get(
+            "target_finish_time", _DEFAULT_TARGET_FINISH
+        )
+        watcher.set_target_finish_time(
+            next_occurrence(target_finish_tod, dt_util.now())
         )
         await watcher.async_start()
         hass.data[DOMAIN][f"{entry.entry_id}.{_WATCHER_KEY}"] = watcher
@@ -70,4 +107,13 @@ async def async_unload_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> boo
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
+
+    # Drop domain-level services when the last entry is gone (only coordinator
+    # entries remain in hass.data[DOMAIN]; watcher keys contain a dot).
+    remaining = [
+        key for key in hass.data.get(DOMAIN, {}) if "." not in key
+    ]
+    if not remaining:
+        async_unregister_services(hass)
+
     return unload_ok
