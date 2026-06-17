@@ -1,0 +1,128 @@
+{
+  "scenario": "stale-meter: CHARGING \u2192 blind (None) \u2192 STALE_METER fault; plus recovery leg",
+  "config": {
+    "stale_meter_fault_seconds": 1800.0
+  },
+  "real_data_note": "Cadence-based freeze detection intentionally omitted: fixtures/real-swoop-asm-charge.csv has median 365 s / max 788 s gaps with flat power, indistinguishable from a frozen meter (spec D1).",
+  "fault_leg": [
+    {
+      "timestamp": "2026-01-01T00:00:00+00:00",
+      "power_w": 80.0,
+      "action": "turn_on",
+      "state": "charging",
+      "soc_estimate": null,
+      "reason": "starting charge"
+    },
+    {
+      "timestamp": "2026-01-01T00:01:00+00:00",
+      "power_w": null,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": null,
+      "reason": "power reading unavailable; holding"
+    },
+    {
+      "timestamp": "2026-01-01T00:10:00+00:00",
+      "power_w": null,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": null,
+      "reason": "power reading unavailable; holding"
+    },
+    {
+      "timestamp": "2026-01-01T00:20:00+00:00",
+      "power_w": null,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": null,
+      "reason": "power reading unavailable; holding"
+    },
+    {
+      "timestamp": "2026-01-01T00:30:59+00:00",
+      "power_w": null,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": null,
+      "reason": "power reading unavailable; holding"
+    },
+    {
+      "timestamp": "2026-01-01T00:31:00+00:00",
+      "power_w": null,
+      "action": "turn_off",
+      "state": "faulted",
+      "soc_estimate": null,
+      "reason": "meter blind 1800 s while charging (1800 s without a reading)",
+      "fault": "stale_meter"
+    },
+    {
+      "timestamp": "2026-01-01T00:32:00+00:00",
+      "power_w": null,
+      "action": "none",
+      "state": "faulted",
+      "soc_estimate": null,
+      "reason": "faulted; awaiting user action"
+    }
+  ],
+  "recovery_leg": [
+    {
+      "timestamp": "2026-01-01T00:00:00+00:00",
+      "power_w": 80.0,
+      "action": "turn_on",
+      "state": "charging",
+      "soc_estimate": null,
+      "reason": "starting charge"
+    },
+    {
+      "timestamp": "2026-01-01T00:01:00+00:00",
+      "power_w": null,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": null,
+      "reason": "power reading unavailable; holding"
+    },
+    {
+      "timestamp": "2026-01-01T00:10:00+00:00",
+      "power_w": null,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": null,
+      "reason": "power reading unavailable; holding"
+    },
+    {
+      "timestamp": "2026-01-01T00:11:40+00:00",
+      "power_w": 85.0,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 40.0,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      },
+      "reason": "charging"
+    },
+    {
+      "timestamp": "2026-01-01T00:12:40+00:00",
+      "power_w": 88.0,
+      "action": "none",
+      "state": "charging",
+      "soc_estimate": {
+        "estimated_soc_pct": 48.0,
+        "uncertainty_pct": 10.0,
+        "low_confidence": false,
+        "note": ""
+      },
+      "reason": "charging"
+    }
+  ],
+  "expected": {
+    "fault_leg_fault": "stale_meter",
+    "fault_leg_fault_timestamp": "2026-01-01T00:31:00+00:00",
+    "fault_leg_final_state": "faulted",
+    "fault_leg_event_log": [
+      "guardrail/stale_meter: meter blind 1800 s while charging (1800 s without a reading)"
+    ],
+    "recovery_leg_fault": null,
+    "recovery_leg_final_state": "charging"
+  }
+}

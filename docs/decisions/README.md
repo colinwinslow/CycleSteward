@@ -24,3 +24,4 @@ One file per decision: `NNNN-<slug>.md`, zero-padded, monotonic. Scaffold with
 - 0010 - Calibrating the pure core on Home Assistant history
 - 0011 - Home Assistant entity and service surface
 - 0012 - Finish-time scheduling and probe transparency
+- 0013 - Adapt to the sensor's observed behavior, not one device's

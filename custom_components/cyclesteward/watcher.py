@@ -92,6 +92,7 @@ class HASensorWatcher:
 
         self._cached_power_w: Optional[float] = None
         self._cached_temp_c: Optional[float] = None
+        self._meter_blind: bool = False         # latch for meter_unavailable/recovered events
         self._trace_buffer: List[Tuple[datetime, float]] = []
         self._unsubs: list = []
 
@@ -195,6 +196,20 @@ class HASensorWatcher:
     async def _do_tick(self, power_w: Optional[float], now: datetime) -> None:
         """Call coordinator.tick(), manage trace buffer, dispatch relay action."""
         prev_state = self._coordinator.session_state
+
+        # Meter availability breadcrumbs (spec stale-meter-guardrail): a one-shot
+        # logbook event on the numeric↔None transition while charging.  These are
+        # observability only — the STALE_METER fault is decided in the pure core.
+        if prev_state == SessionState.CHARGING:
+            if power_w is None and not self._meter_blind:
+                self._meter_blind = True
+                self._fire_event(
+                    "meter_unavailable",
+                    "power meter unavailable; holding (will fault if prolonged)",
+                )
+            elif power_w is not None and self._meter_blind:
+                self._meter_blind = False
+                self._fire_event("meter_recovered", "power meter reading resumed")
 
         # ── Probe scheduling (ADR-0012 B) ─────────────────────────────────────
         # Fire the probe once per cycle when the clock reaches probe_time.
@@ -361,6 +376,7 @@ class HASensorWatcher:
             self._probe_fired = False
             self._probe_soc_reading = None
             self._overrun_fired = False
+            self._meter_blind = False
 
     # ── Event handlers ────────────────────────────────────────────────────────
 

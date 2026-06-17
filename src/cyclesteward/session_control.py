@@ -366,6 +366,25 @@ class SessionController:
 
         # 6. Missing/non-numeric power: hold safely, no progress, no cutoff misfire.
         if power_w is None:
+            # While charging, a prolonged blind run fails safe (ADR-0005
+            # invariant 7): cut power and fault rather than charge unobserved.
+            # The blind-run clock applies only to an active charge.  After the
+            # fault, FAULTED short-circuits at step 4 above, so the un-cleared
+            # _blind_run_start is harmless until the next reset().
+            if self._state == SessionState.CHARGING:
+                stale_guard = self._guardrails.check_stale_meter(True, now)
+                if stale_guard is not None:
+                    self._state = SessionState.FAULTED
+                    self.event_log.append(
+                        f"guardrail/{stale_guard.fault.value}: {stale_guard.reason}"
+                    )
+                    return TickResult(
+                        SessionAction.TURN_OFF,
+                        SessionState.FAULTED,
+                        None,
+                        stale_guard.reason,
+                        fault=stale_guard.fault,
+                    )
             return TickResult(
                 SessionAction.NONE, self._state, None,
                 "power reading unavailable; holding"
@@ -409,6 +428,8 @@ class SessionController:
 
         # 9. Charging: run guardrails, then evaluate the cutoff for the active mode.
         if self._state == SessionState.CHARGING:
+            # A numeric reading clears any in-progress stale-meter blind run.
+            self._guardrails.check_stale_meter(False, now)
             idle_w = self._profile.idle_power_w or 0.0
             self._guardrails.accumulate(power_w, idle_w, now)
 

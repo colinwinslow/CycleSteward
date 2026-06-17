@@ -24,6 +24,7 @@ class GuardrailFault(str, Enum):
     RELAY_LIMIT = "relay_limit"
     MIN_DWELL = "min_dwell"
     SWITCH_COMMAND_FAILURE = "switch_command_failure"
+    STALE_METER = "stale_meter"
 
 
 @dataclass
@@ -35,6 +36,7 @@ class GuardrailsConfig:
     relay_cycle_limit: int = 10  # max total relay transitions per session
     min_dwell_seconds: float = 30.0  # min seconds between relay operations
     command_confirm_seconds: float = 10.0  # seconds to wait for plug to confirm off
+    stale_meter_fault_seconds: float = 1800.0  # blind-while-charging before STALE_METER
 
 
 @dataclass
@@ -51,6 +53,7 @@ class GuardrailResult:
             GuardrailFault.MAX_RUNTIME,
             GuardrailFault.MAX_ACTIVE_WH,
             GuardrailFault.SWITCH_COMMAND_FAILURE,
+            GuardrailFault.STALE_METER,
         )
 
 
@@ -72,6 +75,7 @@ class GuardrailEvaluator:
         self._relay_transitions: List[datetime] = []
         self._last_tick_time: Optional[datetime] = None
         self._pending_off_deadline: Optional[datetime] = None
+        self._blind_run_start: Optional[datetime] = None
 
     @property
     def active_wh(self) -> float:
@@ -92,6 +96,7 @@ class GuardrailEvaluator:
         self._relay_transitions = []
         self._last_tick_time = None
         self._pending_off_deadline = None
+        self._blind_run_start = None
 
     def on_charging_started(self, now: datetime) -> None:
         """Record session start when TURN_ON is committed.
@@ -168,6 +173,40 @@ class GuardrailEvaluator:
                 reason=(
                     f"max runtime {self._config.max_runtime_seconds:.0f} s exceeded "
                     f"({elapsed:.0f} s elapsed)"
+                ),
+            )
+        return None
+
+    def check_stale_meter(
+        self, power_is_missing: bool, now: datetime
+    ) -> Optional[GuardrailResult]:
+        """Fault if the meter has been blind (power unavailable) too long while charging.
+
+        Tracks the wall-clock start of the current blind run. A blind run is any
+        stretch of ``power_is_missing`` ticks; the caller invokes this only while
+        CHARGING (the blind-run clock does not apply outside an active charge).
+
+        - ``power_is_missing`` False clears the blind run and returns None.
+        - ``power_is_missing`` True lazily records the run start and faults once
+          ``now - start >= stale_meter_fault_seconds``.
+
+        Staleness here means the entity is genuinely unavailable/unknown (fed to
+        the controller as ``None``); a meter that merely reports infrequently
+        still delivers a numeric value and never enters a blind run (ADR-0005;
+        spec stale-meter-guardrail, decision D1).
+        """
+        if not power_is_missing:
+            self._blind_run_start = None
+            return None
+        if self._blind_run_start is None:
+            self._blind_run_start = now
+        blind_s = (now - self._blind_run_start).total_seconds()
+        if blind_s >= self._config.stale_meter_fault_seconds:
+            return GuardrailResult(
+                fault=GuardrailFault.STALE_METER,
+                reason=(
+                    f"meter blind {self._config.stale_meter_fault_seconds:.0f} s while "
+                    f"charging ({blind_s:.0f} s without a reading)"
                 ),
             )
         return None
