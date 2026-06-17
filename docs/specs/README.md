@@ -15,3 +15,4 @@ at `bdd/<feature>/<slug>-bdd.md`.
 - `ha-adapter-wiring` - live sensor wiring, relay dispatch, trace buffer, profile persistence (active)
 - `ha-calibration-ingestion` - taper-completion calibration ingestion with temperature correction (active)
 - `finish-time-scheduling` - probe cadence, dynamic start time, PROBING state, logbook events, overrun detection (active)
+- `config-entry-plumbing` - config-flow entity selection, time-entity round-trip, service registration; closes review F1 (draft)
