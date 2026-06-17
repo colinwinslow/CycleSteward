@@ -16,6 +16,14 @@ dev = [
   "pytest>=8",
   "ruff>=0.5",
 ]
+# Real-Home-Assistant smoke-test deps (packet 4). These pin a heavy, fast-moving
+# stack and require Python >= 3.13 — install into a SEPARATE env (.venv-ha), not
+# the project .venv. The offline unit suite (tests/) deliberately does not need
+# these; it runs against tests/ha_stubs.py. See docs/specs/real-ha-smoke-test.md.
+ha-test = [
+  "homeassistant==2026.6.3",
+  "pytest-homeassistant-custom-component==0.13.339",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

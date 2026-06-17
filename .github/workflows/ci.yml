@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Canonical Home Assistant manifest validation. hassfest is not distributed in
+  # the pip wheel (it lives in home-assistant/core), so it runs here as the
+  # official action rather than locally. See docs/specs/real-ha-smoke-test.md.
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  # Fast offline unit suite (pure core + adapter against tests/ha_stubs.py).
+  # No Home Assistant install; runs on a modern interpreter.
+  test-offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m ruff check .
+      - run: python -m pytest
+
+  # Real-Home-Assistant smoke suite (packet 4): loads the integration through
+  # genuine HA. Requires Python >= 3.13 for the pinned HA release.
+  test-real-ha:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[ha-test]"
+      - run: python -m pytest tests_ha/ -v --asyncio-mode=auto

@@ -1,12 +1,12 @@
 {
   "domain": "cyclesteward",
   "name": "CycleSteward",
-  "version": "0.1.0",
-  "description": "E-bike charger manager: learns charge curve, controls timing and cutoff.",
-  "documentation": "",
-  "requirements": [],
+  "codeowners": ["@colinwinslow"],
+  "config_flow": true,
   "dependencies": [],
-  "codeowners": [],
+  "description": "E-bike charger manager: learns charge curve, controls timing and cutoff.",
+  "documentation": "https://github.com/colinwinslow/CycleSteward",
   "iot_class": "local_polling",
-  "config_flow": true
+  "requirements": [],
+  "version": "0.1.0"
 }

@@ -11,6 +11,8 @@ dist/
 .ruff_cache/
 .venv/
 venv/
+# Real-HA smoke-test env (Python 3.14 + Home Assistant); see docs/specs/real-ha-smoke-test.md
+.venv-ha/
 
 # Claude Code local (per-user, not shared)
 .claude/settings.local.json
