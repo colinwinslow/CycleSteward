@@ -1,0 +1,249 @@
+{
+  "description": "probe-cc-cv-disambiguation anchor trace",
+  "min_probe_samples": 3,
+  "cv_falling_ratio": 0.9,
+  "legs": {
+    "cc_probe": {
+      "description": "flat wattage during probe \u2192 CC classification \u2192 start time refined",
+      "target_finish_time": "2026-01-02T07:00:00+00:00",
+      "margin_s": 1800.0,
+      "pessimistic_start_time": "2026-01-02T00:54:00+00:00",
+      "probe_time": "2026-01-02T00:44:00+00:00",
+      "probe_watts": [
+        65.0,
+        66.0,
+        65.0
+      ],
+      "events": [
+        {
+          "ts": "2026-01-01T00:00:00+00:00",
+          "power_w": 65.0,
+          "state": "waiting_for_schedule",
+          "note": "initial tick"
+        },
+        {
+          "ts": "2026-01-02T00:44:00+00:00",
+          "power_w": 65.0,
+          "state": "probing",
+          "note": "probe fired"
+        },
+        {
+          "ts": "2026-01-02T00:44:10+00:00",
+          "power_w": 65.0,
+          "state": "probing",
+          "note": "probe sample 1"
+        },
+        {
+          "ts": "2026-01-02T00:44:20+00:00",
+          "power_w": 66.0,
+          "state": "probing",
+          "note": "probe sample 2"
+        },
+        {
+          "ts": "2026-01-02T00:44:30+00:00",
+          "power_w": 65.0,
+          "state": "waiting_for_schedule",
+          "note": "probe sample 3"
+        }
+      ],
+      "probe_result_event": {
+        "event": "probe_result",
+        "reason": "probe complete: CC phase; SoC ~20%; start time updated",
+        "timestamp": "2026-07-03T02:06:31.695805+00:00",
+        "classification": "cc",
+        "soc_estimate_pct": 20.0,
+        "uncertainty_pct": 10.0,
+        "computed_start_time": "2026-01-02T03:18:00+00:00"
+      },
+      "computed_start_time_after": "2026-01-02T03:18:00+00:00",
+      "expected": {
+        "classification": "cc",
+        "start_time_moved_later": true
+      }
+    },
+    "cv_taper_probe": {
+      "description": "falling wattage during probe \u2192 CV taper classification \u2192 start pushed late",
+      "probe_watts": [
+        78.0,
+        65.0,
+        50.0
+      ],
+      "events": [
+        {
+          "ts": "2026-01-01T00:00:00+00:00",
+          "power_w": 70.0,
+          "state": "waiting_for_schedule",
+          "note": "initial tick"
+        },
+        {
+          "ts": "2026-01-02T00:44:00+00:00",
+          "power_w": 70.0,
+          "state": "probing",
+          "note": "probe fired"
+        },
+        {
+          "ts": "2026-01-02T00:44:10+00:00",
+          "power_w": 78.0,
+          "state": "probing",
+          "note": "probe sample 1"
+        },
+        {
+          "ts": "2026-01-02T00:44:20+00:00",
+          "power_w": 65.0,
+          "state": "probing",
+          "note": "probe sample 2"
+        },
+        {
+          "ts": "2026-01-02T00:44:30+00:00",
+          "power_w": 50.0,
+          "state": "waiting_for_schedule",
+          "note": "probe sample 3"
+        }
+      ],
+      "probe_result_event": {
+        "event": "probe_result",
+        "reason": "probe complete: CV taper detected; battery near-full; start time pushed late",
+        "timestamp": "2026-07-03T02:06:31.697399+00:00",
+        "classification": "cv_taper",
+        "first_mean_w": 78.0,
+        "last_mean_w": 50.0,
+        "computed_start_time": "2026-01-02T06:30:00+00:00"
+      },
+      "computed_start_time_after": "2026-01-02T06:30:00+00:00",
+      "expected": {
+        "classification": "cv_taper",
+        "computed_start_time": "2026-01-02T06:30:00+00:00"
+      }
+    },
+    "probe_timeout": {
+      "description": "meter unavailable during probe \u2192 timeout \u2192 pessimistic fallback, no classification",
+      "max_probe_seconds": 30.0,
+      "pessimistic_start_time": "2026-01-02T00:54:00+00:00",
+      "events": [
+        {
+          "ts": "2026-01-01T00:00:00+00:00",
+          "power_w": 65.0,
+          "state": "waiting_for_schedule",
+          "note": "initial tick"
+        },
+        {
+          "ts": "2026-01-02T00:44:00+00:00",
+          "power_w": 65.0,
+          "state": "probing",
+          "note": "probe fired"
+        },
+        {
+          "ts": "2026-01-02T00:44:10+00:00",
+          "power_w": null,
+          "state": "probing",
+          "note": "meter unavailable (tick 1)"
+        },
+        {
+          "ts": "2026-01-02T00:44:20+00:00",
+          "power_w": null,
+          "state": "probing",
+          "note": "meter unavailable (tick 2)"
+        },
+        {
+          "ts": "2026-01-02T00:44:30+00:00",
+          "power_w": null,
+          "state": "waiting_for_schedule",
+          "note": "meter unavailable (tick 3)"
+        },
+        {
+          "ts": "2026-01-02T00:44:40+00:00",
+          "power_w": null,
+          "state": "waiting_for_schedule",
+          "note": "meter unavailable (tick 4)"
+        }
+      ],
+      "probe_result_event": {
+        "event": "probe_result",
+        "reason": "probe timeout: insufficient samples; using pessimistic start time",
+        "timestamp": "2026-07-03T02:06:31.698907+00:00",
+        "computed_start_time": "2026-01-02T00:54:00+00:00"
+      },
+      "computed_start_time_after": "2026-01-02T00:54:00+00:00",
+      "expected": {
+        "no_classification_field": true,
+        "computed_start_time_unchanged": true
+      }
+    },
+    "soc_latch": {
+      "description": "CHARGE_TO_FULL taper: soc_estimate held at session max",
+      "events": [
+        {
+          "ts": "2026-01-03T12:00:00+00:00",
+          "power_w": 75.0,
+          "action": "turn_on",
+          "state": "charging",
+          "soc_estimate": null,
+          "reason": "starting charge",
+          "note": "TURN_ON"
+        },
+        {
+          "ts": "2026-01-03T12:01:00+00:00",
+          "power_w": 75.0,
+          "action": "none",
+          "state": "charging",
+          "soc_estimate": {
+            "estimated_soc_pct": 60.0,
+            "uncertainty_pct": 10.0,
+            "low_confidence": false,
+            "note": ""
+          },
+          "reason": "charging to full",
+          "note": "peak SoC 60.0"
+        },
+        {
+          "ts": "2026-01-03T12:02:00+00:00",
+          "power_w": 8.0,
+          "action": "none",
+          "state": "charging",
+          "soc_estimate": {
+            "estimated_soc_pct": 60.0,
+            "uncertainty_pct": 10.0,
+            "low_confidence": true,
+            "note": "taper phase: SoC held at session max"
+          },
+          "reason": "charging to full",
+          "note": "taper start; latch armed"
+        },
+        {
+          "ts": "2026-01-03T12:02:30+00:00",
+          "power_w": 5.0,
+          "action": "none",
+          "state": "charging",
+          "soc_estimate": {
+            "estimated_soc_pct": 60.0,
+            "uncertainty_pct": 10.0,
+            "low_confidence": true,
+            "note": "taper phase: SoC held at session max"
+          },
+          "reason": "charging to full",
+          "note": "falling wattage; latch holds"
+        },
+        {
+          "ts": "2026-01-03T12:03:01+00:00",
+          "power_w": 3.0,
+          "action": "turn_off",
+          "state": "done_latched_off",
+          "soc_estimate": {
+            "estimated_soc_pct": 60.0,
+            "uncertainty_pct": 10.0,
+            "low_confidence": true,
+            "note": "taper phase: SoC held at session max"
+          },
+          "reason": "wattage below taper floor for configured duration; best-effort full completion",
+          "note": "taper duration met; cutoff"
+        }
+      ],
+      "expected": {
+        "peak_soc_pct": 60.0,
+        "latch_note_contains": "taper phase",
+        "latch_low_confidence": true,
+        "done_state": "done_latched_off"
+      }
+    }
+  }
+}

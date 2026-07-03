@@ -11,6 +11,8 @@ import json
 from datetime import datetime, time, timezone
 from pathlib import Path
 
+import pytest
+
 from cyclesteward.calibration import (
     CalibrationProfile,
     ProfileState,
@@ -623,3 +625,93 @@ def test_generate_charge_to_target_trace():
     latch_event = trace_data["events"][-1]
     assert latch_event["state"] == "done_latched_off"
     assert latch_event["action"] == "none"
+
+
+# ── SoC taper latch (F7) ──────────────────────────────────────────────────────
+
+
+def test_soc_latch_holds_at_session_max_when_taper_begins():
+    """Once taper starts in CHARGE_TO_FULL, soc_estimate returns the session max."""
+    config = SessionConfig(taper_below_floor_seconds=60.0)
+    ctrl = SessionController(_calibrated_profile(taper_floor_w=12.0), config)
+    ctrl.set_mode(ChargeMode.CHARGE_TO_FULL)
+    ctrl.tick(90.0, None, _T0)  # TURN_ON, CHARGING
+    # Build up some SoC readings: 85 W maps to (85-70)/(100-70)*80 = 40 %
+    r1 = ctrl.tick(85.0, None, _t(minutes=1))
+    assert r1.soc_estimate is not None
+    peak_soc = r1.soc_estimate.estimated_soc_pct  # ~40 %
+
+    # Drop below taper floor — latch should arm
+    r2 = ctrl.tick(8.0, None, _t(minutes=2))
+    assert r2.soc_estimate is not None
+    assert r2.soc_estimate.estimated_soc_pct == peak_soc
+    assert r2.soc_estimate.low_confidence is True
+    assert "taper phase" in r2.soc_estimate.note
+
+
+def test_soc_latch_does_not_count_down_during_taper():
+    """Subsequent taper ticks keep returning the latched max, not the falling wattage."""
+    config = SessionConfig(taper_below_floor_seconds=120.0)
+    ctrl = SessionController(_calibrated_profile(taper_floor_w=12.0), config)
+    ctrl.set_mode(ChargeMode.CHARGE_TO_FULL)
+    ctrl.tick(90.0, None, _T0)  # TURN_ON
+    ctrl.tick(85.0, None, _t(minutes=1))  # peak SoC ~40 %
+
+    ctrl.tick(8.0, None, _t(minutes=2))  # taper start, latch armed
+    r_mid = ctrl.tick(5.0, None, _t(minutes=2, seconds=30))   # lower wattage
+    r_low = ctrl.tick(3.0, None, _t(minutes=3))               # even lower
+
+    # Both should return the same latched value, not track the falling watts
+    assert r_mid.soc_estimate is not None
+    assert r_low.soc_estimate is not None
+    assert r_mid.soc_estimate.estimated_soc_pct == r_low.soc_estimate.estimated_soc_pct
+
+
+def test_soc_latch_clears_after_set_mode():
+    """set_mode() clears the latch; a fresh session computes SoC from wattage."""
+    config = SessionConfig(taper_below_floor_seconds=60.0)
+    ctrl = SessionController(_calibrated_profile(taper_floor_w=12.0), config)
+    ctrl.set_mode(ChargeMode.CHARGE_TO_FULL)
+    ctrl.tick(90.0, None, _T0)
+    ctrl.tick(85.0, None, _t(minutes=1))
+    ctrl.tick(8.0, None, _t(minutes=2))  # latch armed
+
+    # Start a fresh session
+    ctrl.set_mode(ChargeMode.CHARGE_TO_FULL)
+    ctrl.tick(80.0, None, _t(minutes=10))  # new TURN_ON
+
+    # SoC should be computed from wattage (80 W → (80-70)/30*80 = ~26.7 %)
+    r = ctrl.tick(80.0, None, _t(minutes=11))
+    assert r.soc_estimate is not None
+    assert "taper phase" not in r.soc_estimate.note
+    assert r.soc_estimate.estimated_soc_pct == pytest.approx(26.7, abs=1.0)
+
+
+def test_soc_latch_skipped_when_no_calibrated_soc():
+    """When the profile is uncalibrated, _session_max_soc_pct stays None and latch does not arm."""
+    config = SessionConfig(taper_below_floor_seconds=60.0)
+    ctrl = SessionController(_partial_profile(), config)  # CALIBRATING, low-confidence
+    ctrl.set_mode(ChargeMode.CHARGE_TO_FULL)
+    ctrl.tick(90.0, None, _T0)
+    ctrl.tick(85.0, None, _t(minutes=1))
+    r = ctrl.tick(8.0, None, _t(minutes=2))  # below taper floor
+
+    # Low-confidence estimate still produced (no latch note)
+    assert r.soc_estimate is not None
+    assert "taper phase" not in r.soc_estimate.note
+
+
+def test_soc_latch_present_at_done_latched_off():
+    """DONE_LATCHED_OFF tick returns the latched SoC, not None."""
+    config = SessionConfig(taper_below_floor_seconds=60.0)
+    ctrl = SessionController(_calibrated_profile(taper_floor_w=12.0), config)
+    ctrl.set_mode(ChargeMode.CHARGE_TO_FULL)
+    ctrl.tick(90.0, None, _T0)
+    ctrl.tick(85.0, None, _t(minutes=1))  # peak SoC ~40 %
+    ctrl.tick(8.0, None, _t(minutes=2))   # taper start
+
+    # Run through taper duration → DONE_LATCHED_OFF
+    r = ctrl.tick(8.0, None, _t(minutes=3, seconds=1))
+    assert r.state == SessionState.DONE_LATCHED_OFF
+    assert r.soc_estimate is not None
+    assert "taper phase" in r.soc_estimate.note

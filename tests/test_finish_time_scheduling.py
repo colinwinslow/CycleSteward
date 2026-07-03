@@ -571,12 +571,13 @@ class TestComputedStartTimeUpdate:
         run(watcher._do_tick(80.0, pt))
         assert coordinator.session_state == SessionState.PROBING
 
-        # Feed a stable, high-confidence CC wattage (90W → ~31% SoC, low_confidence=False)
-        run(watcher._do_tick(90.0, pt + timedelta(seconds=10)))
+        # Feed 3 flat CC-phase readings (90W → ~31% SoC) to trigger classification.
+        for i in range(3):
+            run(watcher._do_tick(90.0, pt + timedelta(seconds=10 * (i + 1))))
 
-        # Probe must have resolved: 90W is in CC range and calibrated → high confidence
+        # Probe must have resolved after 3 samples: flat CC trend classified correctly.
         assert coordinator.session_state == SessionState.WAITING_FOR_SCHEDULE, (
-            f"Expected WAITING_FOR_SCHEDULE after stable reading, got {coordinator.session_state}"
+            f"Expected WAITING_FOR_SCHEDULE after 3 CC readings, got {coordinator.session_state}"
         )
         refined = watcher.computed_start_time
         assert refined is not None
@@ -584,10 +585,11 @@ class TestComputedStartTimeUpdate:
         assert refined >= pessimistic, (
             f"refined {refined} should be >= pessimistic {pessimistic}"
         )
-        # probe_result event fired with soc info and uncertainty
+        # probe_result event fired with classification=cc, soc info and uncertainty
         fired_events = [call[0][1] for call in hass.bus.async_fire.call_args_list]
         probe_results = [e for e in fired_events if e["event"] == "probe_result"]
         assert len(probe_results) >= 1
+        assert probe_results[-1].get("classification") == "cc"
         assert "soc_estimate_pct" in probe_results[-1]
         assert "uncertainty_pct" in probe_results[-1]
 

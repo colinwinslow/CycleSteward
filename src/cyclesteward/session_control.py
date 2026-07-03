@@ -145,6 +145,11 @@ class SessionController:
         self._taper_start: Optional[datetime] = None
         self._probe_start: Optional[datetime] = None
 
+        # SoC latch: holds the session-peak SoC estimate once CHARGE_TO_FULL
+        # taper begins, so the display doesn't count down during taper.
+        self._session_max_soc_pct: Optional[float] = None
+        self._taper_latched: bool = False
+
         self.event_log: List[str] = []
 
     @property
@@ -184,6 +189,8 @@ class SessionController:
         self._state = SessionState.IDLE
         self._taper_start = None
         self._heat_delay_start = None
+        self._session_max_soc_pct = None
+        self._taper_latched = False
         self._guardrails.reset()
 
     def set_morning_reset_time(self, value: time) -> None:
@@ -282,6 +289,8 @@ class SessionController:
                 self._state = SessionState.IDLE
                 self._taper_start = None
                 self._heat_delay_start = None
+                self._session_max_soc_pct = None
+                self._taper_latched = False
                 self._guardrails.reset()
                 return TickResult(
                     SessionAction.NONE, SessionState.IDLE, None,
@@ -421,6 +430,8 @@ class SessionController:
                     )
             # No schedule, or past the scheduled start time: begin charging.
             self._state = SessionState.CHARGING
+            self._session_max_soc_pct = None
+            self._taper_latched = False
             self._guardrails.on_charging_started(now)
             return TickResult(
                 SessionAction.TURN_ON, SessionState.CHARGING, None, "starting charge"
@@ -468,6 +479,18 @@ class SessionController:
 
             soc_est = self._estimate_soc(power_w, temperature_c)
 
+            # Track session-peak SoC for the CHARGE_TO_FULL taper latch.
+            # Only update from high-confidence CC-phase readings so an uncalibrated
+            # profile or above-transition estimate doesn't poison the latched value.
+            if (
+                soc_est is not None
+                and not soc_est.low_confidence
+                and not self._taper_latched
+            ):
+                raw = soc_est.estimated_soc_pct
+                if self._session_max_soc_pct is None or raw > self._session_max_soc_pct:
+                    self._session_max_soc_pct = raw
+
             if self._mode == ChargeMode.CHARGE_TO_TARGET:
                 target = self._adjusted_target_wattage(temperature_c)
                 if target is not None and power_w >= target:
@@ -501,8 +524,19 @@ class SessionController:
                 if taper_floor is not None and power_w < taper_floor:
                     if self._taper_start is None:
                         self._taper_start = now
-                    elif (
-                        (now - self._taper_start).total_seconds()
+                        # Arm latch at session max the first time taper is detected.
+                        if self._session_max_soc_pct is not None:
+                            self._taper_latched = True
+                    # Return the latched peak SoC during taper so the display
+                    # doesn't count down as wattage falls toward completion.
+                    if self._taper_latched and self._session_max_soc_pct is not None:
+                        soc_est = SocEstimate(
+                            self._session_max_soc_pct, 10.0, True,
+                            "taper phase: SoC held at session max",
+                        )
+                    if (
+                        self._taper_start is not None
+                        and (now - self._taper_start).total_seconds()
                         >= self._config.taper_below_floor_seconds
                     ):
                         # Guardrail C: relay chatter check before committing TURN_OFF.

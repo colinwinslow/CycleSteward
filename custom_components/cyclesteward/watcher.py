@@ -38,6 +38,12 @@ from .coordinator import CyclestewardCoordinator
 # ADR-0012 C fixed probe headroom (margin default lives in const.py).
 _PROBE_HEADROOM_S = 600.0    # 10 min fixed
 
+# CC/CV probe classification (spec: probe-cc-cv-disambiguation).
+# Minimum samples before trend classification is attempted.
+_MIN_PROBE_SAMPLES = 3
+# last_half_mean / first_half_mean below this ratio → CV taper detected.
+_CV_FALLING_RATIO = 0.90
+
 
 def _parse_float(value: str) -> Optional[float]:
     """Parse a HA state string to float; return None for unavailable/non-numeric."""
@@ -87,7 +93,8 @@ class HASensorWatcher:
         self._margin_s: float = margin_s
         self._computed_start_time: Optional[datetime] = None
         self._probe_fired: bool = False          # one probe per charge cycle
-        self._probe_soc_reading: Optional[float] = None  # first stable CC wattage
+        self._probe_soc_reading: Optional[float] = None  # kept for compat; unused in new path
+        self._probe_samples: List[Tuple[datetime, float]] = []
         self._overrun_fired: bool = False        # one overrun event per session
 
         self._cached_power_w: Optional[float] = None
@@ -143,6 +150,7 @@ class HASensorWatcher:
         self._target_finish_time = target
         self._probe_fired = False
         self._probe_soc_reading = None
+        self._probe_samples.clear()
         self._overrun_fired = False
         self._computed_start_time = self._pessimistic_start_time()
 
@@ -179,6 +187,93 @@ class HASensorWatcher:
         if extra:
             data.update(extra)
         self._hass.bus.async_fire("cyclesteward_event", data)
+
+    # ── Probe CC/CV classification ────────────────────────────────────────────
+
+    def _classify_probe_trend(self) -> Optional[str]:
+        """Classify the accumulated probe window as 'cc' or 'cv_taper'.
+
+        Returns None when fewer than _MIN_PROBE_SAMPLES are available.
+        Compares the mean of the last half of samples to the mean of the first
+        half: a ratio below _CV_FALLING_RATIO indicates CV taper (falling).
+        """
+        watts = [w for _, w in self._probe_samples]
+        n = len(watts)
+        if n < _MIN_PROBE_SAMPLES:
+            return None
+        half = n // 2
+        first_mean = sum(watts[:half]) / half
+        last_mean = sum(watts[-half:]) / half
+        if first_mean == 0.0:
+            return "cc"
+        return "cc" if last_mean / first_mean >= _CV_FALLING_RATIO else "cv_taper"
+
+    def _apply_cc_probe_result(self, now: datetime) -> None:
+        """Update computed_start_time using the CC-phase wattage from the probe window."""
+        watts = [w for _, w in self._probe_samples]
+        half = len(watts) // 2
+        representative_w = sum(watts[-half:]) / half
+
+        soc_est = self._coordinator._controller.estimate_soc(
+            representative_w, self._cached_temp_c
+        )
+        if (
+            soc_est is not None
+            and not soc_est.low_confidence
+            and self._target_finish_time is not None
+        ):
+            profile = self._coordinator.profile
+            mean_dur_s, _ = profile.estimated_duration_s()
+            remaining_frac = max(0.0, 1.0 - soc_est.estimated_soc_pct / 100.0)
+            self._computed_start_time = self._target_finish_time - timedelta(
+                seconds=mean_dur_s * remaining_frac + self._margin_s
+            )
+            self._fire_event(
+                "probe_result",
+                f"probe complete: CC phase; SoC ~{soc_est.estimated_soc_pct:.0f}%; start time updated",
+                {
+                    "classification": "cc",
+                    "soc_estimate_pct": soc_est.estimated_soc_pct,
+                    "uncertainty_pct": soc_est.uncertainty_pct,
+                    "computed_start_time": self._computed_start_time.isoformat(),
+                },
+            )
+        else:
+            self._fire_event(
+                "probe_result",
+                "probe complete: CC phase; SoC estimate low-confidence; using pessimistic start time",
+                {
+                    "classification": "cc",
+                    "computed_start_time": (
+                        self._computed_start_time.isoformat()
+                        if self._computed_start_time else None
+                    ),
+                },
+            )
+
+    def _apply_cv_taper_probe_result(self) -> None:
+        """Push computed_start_time late; battery near-full."""
+        watts = [w for _, w in self._probe_samples]
+        half = len(watts) // 2
+        first_mean = sum(watts[:half]) / half
+        last_mean = sum(watts[-half:]) / half
+        if self._target_finish_time is not None:
+            self._computed_start_time = self._target_finish_time - timedelta(
+                seconds=self._margin_s
+            )
+        self._fire_event(
+            "probe_result",
+            "probe complete: CV taper detected; battery near-full; start time pushed late",
+            {
+                "classification": "cv_taper",
+                "first_mean_w": round(first_mean, 1),
+                "last_mean_w": round(last_mean, 1),
+                "computed_start_time": (
+                    self._computed_start_time.isoformat()
+                    if self._computed_start_time else None
+                ),
+            },
+        )
 
     # ── Core tick logic ───────────────────────────────────────────────────────
 
@@ -225,6 +320,7 @@ class HASensorWatcher:
                 # energize the plug on a refusal — fall back to the pessimistic
                 # start time already in place.
                 if self._coordinator.start_probe(now):
+                    self._probe_samples.clear()
                     self._fire_event(
                         "probe_start",
                         "Probing: estimating SoC (≤5 min)",
@@ -242,9 +338,11 @@ class HASensorWatcher:
                     )
                 return
 
-        # ── Probe reading accumulation ─────────────────────────────────────────
-        # During PROBING, capture the first stable CC-phase wattage, or handle
-        # the controller's timeout-driven TURN_OFF.
+        # ── Probe reading accumulation and CC/CV classification ───────────────
+        # Accumulate wattage samples during PROBING.  Once _MIN_PROBE_SAMPLES
+        # are collected, classify the trend as CC or CV taper and conclude the
+        # probe early.  If the controller times out first, classify whatever
+        # samples exist before falling back to the pessimistic start time.
         if prev_state == SessionState.PROBING:
             result = self._coordinator.tick(
                 power_w,
@@ -253,57 +351,44 @@ class HASensorWatcher:
                 plug_is_on=self._plug_is_on(),
                 computed_start_time=self._computed_start_time,
             )
-            current_state = self._coordinator.session_state
 
             if result.action == SessionAction.TURN_OFF:
-                # Controller timed out — pessimistic fallback already in place.
+                # Controller timed out; turn off the plug.
                 await self._hass.services.async_call(
                     "homeassistant", "turn_off", {"entity_id": self._plug_entity_id}
                 )
-                self._fire_event(
-                    "probe_result",
-                    "probe timeout: no stable CC-phase reading; using pessimistic start time",
-                    {"computed_start_time": (self._computed_start_time.isoformat()
-                                             if self._computed_start_time else None)},
-                )
+                # Classify whatever samples we have (may still be sufficient).
+                classification = self._classify_probe_trend()
+                if classification == "cv_taper":
+                    self._apply_cv_taper_probe_result()
+                elif classification == "cc":
+                    self._apply_cc_probe_result(now)
+                else:
+                    self._fire_event(
+                        "probe_result",
+                        "probe timeout: insufficient samples; using pessimistic start time",
+                        {"computed_start_time": (self._computed_start_time.isoformat()
+                                                 if self._computed_start_time else None)},
+                    )
+                self._probe_samples.clear()
                 return
 
-            # Check for a usable CC-phase wattage reading.
-            if (
-                result.soc_estimate is not None
-                and not result.soc_estimate.low_confidence
-                and power_w is not None
-                and self._probe_soc_reading is None
-            ):
-                self._probe_soc_reading = power_w
-                # Update computed_start_time using refined SoC (time proportional
-                # to remaining capacity fraction).
-                profile = self._coordinator.profile
-                mean_dur_s, _ = profile.estimated_duration_s()
-                remaining_frac = max(
-                    0.0,
-                    1.0 - result.soc_estimate.estimated_soc_pct / 100.0,
-                )
-                estimated_remaining_s = mean_dur_s * remaining_frac
-                self._computed_start_time = (
-                    self._target_finish_time
-                    - timedelta(seconds=estimated_remaining_s + self._margin_s)
-                )
-                # Conclude probe; arm command confirmation for the TURN_OFF below.
+            # Accumulate this tick's sample.
+            if power_w is not None:
+                self._probe_samples.append((now, power_w))
+
+            # Classify once enough samples are available; conclude probe early.
+            classification = self._classify_probe_trend()
+            if classification is not None:
                 self._coordinator.end_probe(now)
                 await self._hass.services.async_call(
                     "homeassistant", "turn_off", {"entity_id": self._plug_entity_id}
                 )
-                self._fire_event(
-                    "probe_result",
-                    f"probe complete: SoC ~{result.soc_estimate.estimated_soc_pct:.0f}%; "
-                    f"start time updated",
-                    {
-                        "soc_estimate_pct": result.soc_estimate.estimated_soc_pct,
-                        "uncertainty_pct": result.soc_estimate.uncertainty_pct,
-                        "computed_start_time": self._computed_start_time.isoformat(),
-                    },
-                )
+                if classification == "cv_taper":
+                    self._apply_cv_taper_probe_result()
+                else:
+                    self._apply_cc_probe_result(now)
+                self._probe_samples.clear()
             return
 
         # ── Normal tick ────────────────────────────────────────────────────────
@@ -375,6 +460,7 @@ class HASensorWatcher:
         if current_state in (SessionState.DONE_LATCHED_OFF, SessionState.IDLE):
             self._probe_fired = False
             self._probe_soc_reading = None
+            self._probe_samples.clear()
             self._overrun_fired = False
             self._meter_blind = False
 

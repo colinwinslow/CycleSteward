@@ -18,3 +18,4 @@ at `bdd/<feature>/<slug>-bdd.md`.
 - `config-entry-plumbing` - config-flow entity selection, time-entity round-trip, service registration; closes review F1 (implemented)
 - `stale-meter-guardrail` - STALE_METER fault on prolonged blind-while-charging; closes review F5 (accepted)
 - `real-ha-smoke-test` - loads the integration in genuine Home Assistant (config flow, entity register, unload) + hassfest CI; closes packet 4 (accepted)
+- `probe-cc-cv-disambiguation` - classify probe window as CC or CV taper; latch SoC at session max during taper; closes packet 5 / F7 (accepted)
