@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone, timedelta
 from types import SimpleNamespace
-from typing import Dict, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -181,56 +180,55 @@ class TestFromJson:
 # ── ProfileStore ──────────────────────────────────────────────────────────────
 
 
-class _FakeStore:
-    """In-memory stand-in for homeassistant.helpers.storage.Store."""
-
-    def __init__(self) -> None:
-        self._data: Optional[Dict] = None
-
-    async def async_load(self) -> Optional[Dict]:
-        return self._data
-
-    async def async_save(self, data: Dict) -> None:
-        self._data = data
-
-
-def _make_profile_store(fake_store: _FakeStore):
-    """Create a ProfileStore backed by a _FakeStore (bypasses real HA storage)."""
+def _make_profile_store(entry_id: str):
+    """Create a ProfileStore over the stub HA Store (shared in-memory backing)."""
     from custom_components.cyclesteward.profile_store import ProfileStore
 
-    store = ProfileStore.__new__(ProfileStore)
-    store._store = fake_store
-    return store
+    return ProfileStore(hass=None, entry_id=entry_id)
 
 
 class TestProfileStore:
-    def test_load_returns_none_when_empty(self):
+    def test_load_empty_yields_empty_library(self):
+        ps = _make_profile_store("empty-entry")
+        run(ps.async_load())
+        assert ps.active_battery_id is None
+        assert ps.battery_ids == []
 
-        fake = _FakeStore()
-        ps = _make_profile_store(fake)
-        result = run(ps.async_load())
-        assert result is None
-
-    def test_save_then_load_round_trips(self):
-        fake = _FakeStore()
-        ps = _make_profile_store(fake)
+    def test_save_then_reload_round_trips(self):
+        ps = _make_profile_store("rt-entry")
+        run(ps.async_load())
         original = _calibrated_profile(watts_at_transition=125.5)
-        run(ps.async_save(original))
-        restored = run(ps.async_load())
+        run(ps.async_save_profile("bat_a", original))
+        run(ps.async_set_active("bat_a"))
+
+        # A fresh ProfileStore over the same entry sees the persisted library.
+        reloaded = _make_profile_store("rt-entry")
+        run(reloaded.async_load())
+        assert reloaded.active_battery_id == "bat_a"
+        restored = reloaded.get_profile("bat_a")
         assert restored is not None
         assert restored.watts_at_transition.watts == pytest.approx(125.5)
         assert restored.state == ProfileState.CALIBRATED
 
     def test_load_reconstructs_all_fields(self):
-        fake = _FakeStore()
-        ps = _make_profile_store(fake)
+        ps = _make_profile_store("fields-entry")
+        run(ps.async_load())
         original = _calibrated_profile()
         original.warnings = ["test-warning"]
         original.taper_floor_w = 12.5
-        run(ps.async_save(original))
-        restored = run(ps.async_load())
+        run(ps.async_save_profile("bat_a", original))
+
+        reloaded = _make_profile_store("fields-entry")
+        run(reloaded.async_load())
+        restored = reloaded.get_profile("bat_a")
         assert restored.taper_floor_w == pytest.approx(12.5)
         assert restored.warnings == ["test-warning"]
+
+    def test_set_active_requires_stored_profile(self):
+        ps = _make_profile_store("guard-entry")
+        run(ps.async_load())
+        with pytest.raises(KeyError):
+            run(ps.async_set_active("nope"))
 
 
 # ── HASensorWatcher ───────────────────────────────────────────────────────────
@@ -471,17 +469,19 @@ class TestHASensorWatcher:
 
 class TestAsyncSetupEntry:
     def test_stored_profile_loaded_into_coordinator(self):
-        """async_setup_entry loads a stored profile and wires it into the coordinator."""
+        """async_setup_entry loads the stored active profile into the coordinator."""
         from types import SimpleNamespace
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock
 
         from custom_components.cyclesteward import DOMAIN, async_setup_entry
 
-        # Pre-populate a fake store with a known calibrated profile
+        # Pre-populate the entry's store (shared stub backing) with a known
+        # calibrated profile as the active battery.
         stored_profile = _calibrated_profile(watts_at_transition=125.5)
-        fake_store = _FakeStore()
-        profile_store_instance = _make_profile_store(fake_store)
-        run(profile_store_instance.async_save(stored_profile))  # saves via to_dict()
+        seed = _make_profile_store("test-entry")
+        run(seed.async_load())
+        run(seed.async_save_profile("b", stored_profile))
+        run(seed.async_set_active("b"))
 
         # Fake hass with data dict, async config_entries, and a services registry
         # (async_setup_entry now registers domain services).
@@ -509,8 +509,7 @@ class TestAsyncSetupEntry:
             },
         )
 
-        with patch("custom_components.cyclesteward.ProfileStore", return_value=profile_store_instance):
-            result = run(async_setup_entry(hass, entry))
+        result = run(async_setup_entry(hass, entry))
 
         assert result is True
         coordinator = hass.data[DOMAIN]["test-entry"]
@@ -520,11 +519,9 @@ class TestAsyncSetupEntry:
     def test_fresh_profile_used_when_store_empty(self):
         """When no stored profile exists, a fresh profile is built from config-entry data."""
         from types import SimpleNamespace
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock
 
         from custom_components.cyclesteward import DOMAIN, async_setup_entry
-
-        empty_store = _make_profile_store(_FakeStore())  # nothing saved
 
         hass = SimpleNamespace(
             data={},
@@ -542,8 +539,7 @@ class TestAsyncSetupEntry:
             data={"charger_label": "c", "battery_label": "b", "meter_id": "m"},
         )
 
-        with patch("custom_components.cyclesteward.ProfileStore", return_value=empty_store):
-            result = run(async_setup_entry(hass, entry))
+        result = run(async_setup_entry(hass, entry))
 
         assert result is True
         coordinator = hass.data[DOMAIN]["test-entry-2"]

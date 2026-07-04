@@ -19,3 +19,4 @@ at `bdd/<feature>/<slug>-bdd.md`.
 - `stale-meter-guardrail` - STALE_METER fault on prolonged blind-while-charging; closes review F5 (accepted)
 - `real-ha-smoke-test` - loads the integration in genuine Home Assistant (config flow, entity register, unload) + hassfest CI; closes packet 4 (accepted)
 - `probe-cc-cv-disambiguation` - classify probe window as CC or CV taper; latch SoC at session max during taper; closes packet 5 / F7 (accepted)
+- `battery-registry-storage` - domain-level battery registry + per-entry profile-library storage + v1→v2 migration; multi-battery slice 1 (ADR-0014) (accepted)

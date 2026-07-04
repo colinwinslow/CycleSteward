@@ -69,7 +69,8 @@ def _make_hass(plug_state: str = "off") -> SimpleNamespace:
 
 def _make_profile_store_mock() -> MagicMock:
     store = MagicMock()
-    store.async_save = AsyncMock()
+    store.active_battery_id = "bat_a"
+    store.async_save_profile = AsyncMock()
     return store
 
 
@@ -170,8 +171,8 @@ class TestScenarioA:
 
         assert coordinator.session_state == SessionState.DONE_LATCHED_OFF
         # Store must have been called once with the updated profile
-        store_mock.async_save.assert_called_once()
-        saved_profile = store_mock.async_save.call_args[0][0]
+        store_mock.async_save_profile.assert_called_once()
+        saved_profile = store_mock.async_save_profile.call_args[0][1]
         assert len(saved_profile.full_observations) == 1
 
     def test_observation_timestamp_is_trace_derived(self):
@@ -213,8 +214,8 @@ class TestScenarioA:
         run(watcher._do_tick(18.0, t(2502)))  # 2 s dwell → taper fires
 
         assert coordinator.session_state == SessionState.DONE_LATCHED_OFF
-        store_mock.async_save.assert_called_once()
-        saved = store_mock.async_save.call_args[0][0]
+        store_mock.async_save_profile.assert_called_once()
+        saved = store_mock.async_save_profile.call_args[0][1]
         assert len(saved.elapsed_seconds) >= 1
         assert saved.elapsed_seconds[0] > 0
 
@@ -250,7 +251,7 @@ class TestScenarioB:
         assert coordinator.session_state == SessionState.DONE_LATCHED_OFF
         # Reason should mention target threshold, not taper floor
         assert "taper floor" not in coordinator.session_reason
-        store_mock.async_save.assert_not_called()
+        store_mock.async_save_profile.assert_not_called()
         assert len(profile.full_observations) == 0
         assert len(profile.partial_observations) == 0
 
@@ -288,7 +289,7 @@ class TestScenarioC:
         assert coordinator.session_state in (SessionState.DONE_LATCHED_OFF, SessionState.FAULTED)
         # "taper floor" must NOT be in the reason — ingestion trigger must not have fired
         assert "taper floor" not in coordinator.session_reason
-        store_mock.async_save.assert_not_called()
+        store_mock.async_save_profile.assert_not_called()
 
 
 # ── Scenario D: anchor artifact + profile round-trip ─────────────────────────
@@ -585,8 +586,8 @@ class TestScenarioF:
             "and taper_below_floor_seconds configuration"
         )
         # Even mid-charge partial → save called
-        store_mock.async_save.assert_called_once()
-        saved = store_mock.async_save.call_args[0][0]
+        store_mock.async_save_profile.assert_called_once()
+        saved = store_mock.async_save_profile.call_args[0][1]
         assert len(saved.full_observations) == 0
         assert len(saved.partial_observations) == 1
 

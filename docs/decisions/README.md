@@ -25,3 +25,4 @@ One file per decision: `NNNN-<slug>.md`, zero-padded, monotonic. Scaffold with
 - 0011 - Home Assistant entity and service surface
 - 0012 - Finish-time scheduling and probe transparency
 - 0013 - Adapt to the sensor's observed behavior, not one device's
+- 0014 - Multi-battery support via a battery registry and per-meter profiles

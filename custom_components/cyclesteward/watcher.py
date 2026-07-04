@@ -453,7 +453,9 @@ class HASensorWatcher:
                 list(self._trace_buffer),
                 session_temp_c=self._cached_temp_c,
             )
-            await self._profile_store.async_save(updated)
+            await self._profile_store.async_save_profile(
+                self._profile_store.active_battery_id, updated
+            )
 
         # Reset per-cycle state when a charge session completes so the next
         # scheduled session gets a fresh probe and overrun guard.

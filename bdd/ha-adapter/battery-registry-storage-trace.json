@@ -1,0 +1,233 @@
+{
+  "generated": "2026-07-04",
+  "spec": "docs/specs/battery-registry-storage.md",
+  "adr": "docs/decisions/0014-multi-battery-profile-registry.md",
+  "legs": {
+    "migration": {
+      "v1_payload": {
+        "schema_version": 1,
+        "charger_label": "Shimano EC-E6000",
+        "battery_label": "Swoop battery",
+        "meter_id": "aqara-plug-1",
+        "rated_capacity_wh": 504.0,
+        "state": "calibrated",
+        "idle_power_w": 2.1,
+        "watts_at_low": {
+          "watts": 69.7,
+          "assumed_soc_label": "display-empty",
+          "confidence": "high"
+        },
+        "watts_at_transition": {
+          "watts": 127.4,
+          "assumed_soc_label": "cc-cv-peak",
+          "confidence": "high"
+        },
+        "taper_floor_w": 11.3,
+        "active_full_wh": 412.6,
+        "overhead": null,
+        "assumptions": {
+          "soc_at_low_pct": 5.0,
+          "soc_at_transition_pct": 95.0,
+          "note": "assumed; not measured BMS values"
+        },
+        "reference_temp_c": 19.5,
+        "full_observations": [
+          {
+            "timestamp": "2026-06-30T21:40:00+00:00",
+            "active_wh": 412.6,
+            "watts_at_low": 69.7,
+            "watts_at_transition": 127.4,
+            "trusted": true,
+            "soc_at_start": null,
+            "quality_flags": [],
+            "elapsed_seconds": 14520.0
+          }
+        ],
+        "partial_observations": [],
+        "temperature_observations": [
+          {
+            "timestamp": "2026-06-30T21:40:00+00:00",
+            "active_wh": 412.6,
+            "watts_at_low": 69.7,
+            "temperature_c": 19.5
+          }
+        ],
+        "soc_reports": [],
+        "warnings": [
+          "seeded-for-migration-test"
+        ]
+      },
+      "v2_payload": {
+        "active_battery_id": "swoop_battery",
+        "profiles": {
+          "swoop_battery": {
+            "schema_version": 1,
+            "charger_label": "Shimano EC-E6000",
+            "battery_label": "Swoop battery",
+            "meter_id": "aqara-plug-1",
+            "rated_capacity_wh": 504.0,
+            "state": "calibrated",
+            "idle_power_w": 2.1,
+            "watts_at_low": {
+              "watts": 69.7,
+              "assumed_soc_label": "display-empty",
+              "confidence": "high"
+            },
+            "watts_at_transition": {
+              "watts": 127.4,
+              "assumed_soc_label": "cc-cv-peak",
+              "confidence": "high"
+            },
+            "taper_floor_w": 11.3,
+            "active_full_wh": 412.6,
+            "overhead": null,
+            "assumptions": {
+              "soc_at_low_pct": 5.0,
+              "soc_at_transition_pct": 95.0,
+              "note": "assumed; not measured BMS values"
+            },
+            "reference_temp_c": 19.5,
+            "full_observations": [
+              {
+                "timestamp": "2026-06-30T21:40:00+00:00",
+                "active_wh": 412.6,
+                "watts_at_low": 69.7,
+                "watts_at_transition": 127.4,
+                "trusted": true,
+                "soc_at_start": null,
+                "quality_flags": [],
+                "elapsed_seconds": 14520.0
+              }
+            ],
+            "partial_observations": [],
+            "temperature_observations": [
+              {
+                "timestamp": "2026-06-30T21:40:00+00:00",
+                "active_wh": 412.6,
+                "watts_at_low": 69.7,
+                "temperature_c": 19.5
+              }
+            ],
+            "soc_reports": [],
+            "warnings": [
+              "seeded-for-migration-test"
+            ]
+          }
+        }
+      },
+      "inner_profile_byte_identical_to_v1": true
+    },
+    "reconciliation": {
+      "registry_payload": {
+        "identities": {
+          "swoop_battery": {
+            "battery_id": "swoop_battery",
+            "charger_label": "Shimano EC-E6000",
+            "battery_label": "Swoop battery",
+            "rated_capacity_wh": 504.0,
+            "target_soc_dots": 4
+          }
+        }
+      }
+    },
+    "two_meter": {
+      "registry_payload": {
+        "identities": {
+          "swoop_battery": {
+            "battery_id": "swoop_battery",
+            "charger_label": "Shimano EC-E6000",
+            "battery_label": "Swoop battery",
+            "rated_capacity_wh": 504.0,
+            "target_soc_dots": 4
+          }
+        }
+      },
+      "entry_m1_payload": {
+        "active_battery_id": "swoop_battery",
+        "profiles": {
+          "swoop_battery": {
+            "schema_version": 1,
+            "charger_label": "Shimano EC-E6000",
+            "battery_label": "Swoop battery",
+            "meter_id": "aqara-plug-1",
+            "rated_capacity_wh": 504.0,
+            "state": "calibrated",
+            "idle_power_w": 2.1,
+            "watts_at_low": {
+              "watts": 69.7,
+              "assumed_soc_label": "display-empty",
+              "confidence": "high"
+            },
+            "watts_at_transition": {
+              "watts": 127.4,
+              "assumed_soc_label": "cc-cv-peak",
+              "confidence": "high"
+            },
+            "taper_floor_w": 11.3,
+            "active_full_wh": 412.6,
+            "overhead": null,
+            "assumptions": {
+              "soc_at_low_pct": 5.0,
+              "soc_at_transition_pct": 95.0,
+              "note": "assumed; not measured BMS values"
+            },
+            "reference_temp_c": 19.5,
+            "full_observations": [
+              {
+                "timestamp": "2026-06-30T21:40:00+00:00",
+                "active_wh": 412.6,
+                "watts_at_low": 69.7,
+                "watts_at_transition": 127.4,
+                "trusted": true,
+                "soc_at_start": null,
+                "quality_flags": [],
+                "elapsed_seconds": 14520.0
+              }
+            ],
+            "partial_observations": [],
+            "temperature_observations": [
+              {
+                "timestamp": "2026-06-30T21:40:00+00:00",
+                "active_wh": 412.6,
+                "watts_at_low": 69.7,
+                "temperature_c": 19.5
+              }
+            ],
+            "soc_reports": [],
+            "warnings": [
+              "seeded-for-migration-test"
+            ]
+          }
+        }
+      },
+      "entry_m2_payload": {
+        "active_battery_id": "swoop_battery",
+        "profiles": {
+          "swoop_battery": {
+            "schema_version": 1,
+            "charger_label": "Shimano EC-E6000",
+            "battery_label": "Swoop battery",
+            "meter_id": "aqara-plug-2",
+            "rated_capacity_wh": 504.0,
+            "state": "uncalibrated",
+            "idle_power_w": null,
+            "watts_at_low": null,
+            "watts_at_transition": null,
+            "taper_floor_w": null,
+            "active_full_wh": null,
+            "overhead": null,
+            "assumptions": null,
+            "reference_temp_c": null,
+            "full_observations": [],
+            "partial_observations": [],
+            "temperature_observations": [],
+            "soc_reports": [],
+            "warnings": []
+          }
+        }
+      },
+      "m1_payload_unchanged_by_m2_setup": true,
+      "registry_identity_count": 1
+    }
+  }
+}

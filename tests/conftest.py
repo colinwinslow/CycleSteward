@@ -16,6 +16,13 @@ import ha_stubs
 
 ha_stubs.install()
 
+
+@pytest.fixture(autouse=True)
+def _reset_ha_storage():
+    """Isolate the shared in-memory Store backing between tests."""
+    ha_stubs.reset_storage()
+    yield
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES_DIR = REPO_ROOT / "fixtures"
 

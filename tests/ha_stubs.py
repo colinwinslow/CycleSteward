@@ -134,17 +134,53 @@ class _SwitchEntity(_TimeEntity):
     pass
 
 
+# Module-level so distinct Store instances with the same key share data (the
+# real Store persists to disk); reset_storage() isolates tests (conftest).
+_STORAGE_BACKING: dict = {}  # key -> {"version": int, "data": dict}
+
+
+def reset_storage() -> None:
+    _STORAGE_BACKING.clear()
+
+
+def seed_storage(key: str, version: int, data: dict) -> None:
+    """Plant a payload as if an older CycleSteward version had saved it."""
+    _STORAGE_BACKING[key] = {"version": version, "data": data}
+
+
+def storage_payload(key: str) -> Optional[dict]:
+    """Raw persisted payload for a key (what the real Store would have on disk)."""
+    rec = _STORAGE_BACKING.get(key)
+    return None if rec is None else rec["data"]
+
+
 class _Store:
-    """In-memory stand-in for homeassistant.helpers.storage.Store."""
+    """In-memory stand-in for homeassistant.helpers.storage.Store.
+
+    Mirrors the real Store's migration contract: on load, a version mismatch
+    calls ``_async_migrate_func(old_major, old_minor, old_data)`` and returns
+    its result without persisting (the real Store persists on next save).
+    """
 
     def __init__(self, hass: Any, version: int, key: str) -> None:
-        self._data: Optional[dict] = None
+        self.version = version
+        self.key = key
 
     async def async_load(self) -> Optional[dict]:
-        return self._data
+        rec = _STORAGE_BACKING.get(self.key)
+        if rec is None:
+            return None
+        if rec["version"] != self.version:
+            return await self._async_migrate_func(rec["version"], 1, rec["data"])
+        return rec["data"]
 
     async def async_save(self, data: dict) -> None:
-        self._data = data
+        _STORAGE_BACKING[self.key] = {"version": self.version, "data": data}
+
+    async def _async_migrate_func(
+        self, old_major_version: int, old_minor_version: int, old_data: dict
+    ) -> dict:
+        raise NotImplementedError
 
 
 def _make_module(name: str, **attrs: Any) -> ModuleType:
@@ -251,7 +287,15 @@ def install() -> None:
     )
 
     # util.dt — the single timezone authority.  now() is settable by tests.
-    util = _make_module("homeassistant.util")
+    import re as _re
+
+    def _slugify(text: Any, *, separator: str = "_") -> str:
+        result = _re.sub(
+            r"[^a-z0-9]+", separator, str(text).lower()
+        ).strip(separator)
+        return result or "unknown"
+
+    util = _make_module("homeassistant.util", slugify=_slugify)
     dt_mod = ModuleType("homeassistant.util.dt")
     dt_mod._now_value = datetime.now(tz=timezone.utc)  # type: ignore[attr-defined]
 
