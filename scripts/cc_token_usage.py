@@ -591,7 +591,11 @@ def current_commit_sha() -> str:
 
 
 def load_workflow_config(path: Path) -> dict[str, bool]:
-    defaults: dict[str, bool] = {"token_tracking": True}
+    # manage_git_hooks=false hands hook routing to an external manager (e.g. the
+    # pre-commit framework). The tracked hook scripts still run -- that manager
+    # invokes them -- but this tool stops setting core.hooksPath, which would
+    # otherwise bypass every hook the other manager installed.
+    defaults: dict[str, bool] = {"token_tracking": True, "manage_git_hooks": True}
     if not path.exists():
         return defaults
     with path.open("r", encoding="utf-8") as handle:
@@ -882,7 +886,15 @@ def startup_command(args: argparse.Namespace) -> int:
     # created a bootstrap trap: a fresh clone has no session history yet, so the
     # first session left core.hooksPath unset and tracking silently never started.
     # The commit-path hooks degrade to a no-op while the baseline is missing.
-    hooks_info = configure_tracked_hooks()
+    hooks_info: dict[str, Any] | None = None
+    if load_workflow_config(resolve_repo_path(args.workflow_config))["manage_git_hooks"]:
+        hooks_info = configure_tracked_hooks()
+    else:
+        # The baseline is local state and must be ignored either way; only hook
+        # routing is delegated.
+        ensure_baseline_ignore()
+        print("[cc-token-usage] hook routing delegated (manage_git_hooks=false); "
+              "core.hooksPath left alone")
 
     if not baseline_ok:
         warnings.append(f"token-baseline-unavailable: {baseline_warning}")
