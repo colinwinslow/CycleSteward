@@ -1,0 +1,6 @@
+{
+  "token_tracking": true,
+  "activity_tracking": false,
+  "spend_tracking": true,
+  "continuity_tracking": false
+}

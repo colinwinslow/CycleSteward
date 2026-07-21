@@ -24,6 +24,14 @@
             "command": "echo '=== /startup drift-check (SessionStart hook) ==='; git fetch origin --quiet 2>/dev/null || echo '(no origin remote or fetch failed)'; echo '--- working tree (git status --porcelain) ---'; git status --porcelain; echo '--- commits behind origin/main ---'; git rev-list --count main..origin/main 2>/dev/null || echo 'n/a (no upstream main)'"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/cc-hooks/run-cc-token-helper.sh startup 2>/dev/null || true"
+          }
+        ]
       }
     ]
   }

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+repo_root="$(git rev-parse --show-toplevel)"
+message_file="$1"
+case "$message_file" in
+  /*) ;;
+  *) message_file="$repo_root/$message_file" ;;
+esac
+exec "$repo_root/scripts/cc-hooks/run-cc-token-helper.sh" \
+  commit-msg \
+  --message-file "$message_file"
